@@ -28,6 +28,7 @@ import {
 import { makeDefaultRadiographs as createDefaultRadiographs, normalizeRadiographs } from "./radiographs";
 import { ALL_TEETH, SCHEMA_VERSION, ROOT_CARIES_ALL_TEETH, PROBING_ALL_SITES, rootCariesEntryCount } from "./constants";
 import { isImplantCode } from "./tooth-status";
+import { Scans3DData, makeDefaultScans3D, normalizeScans3D } from "./scans3d";
 
 type ChangeListener = () => void;
 
@@ -196,6 +197,7 @@ function createBlankSession(): ExaminationSession {
     ohip: new Array(49).fill(null) as OhipData,
     ohipExtra: makeDefaultOhipExtra(),
     fdiQuestionnaire: createDefaultFdiQuestionnaire(),
+    scans3d: makeDefaultScans3D(),
   };
 }
 
@@ -317,6 +319,14 @@ export class SessionState {
 
   getFdiQuestionnaire(): FdiQuestionnaireData {
     return this.getSession().fdiQuestionnaire;
+  }
+
+  getScans3D(): Scans3DData {
+    const s = this.getSession();
+    // Sessions saved before the 3D tab existed have no scans3d at all. Only
+    // replaced when incomplete, so callers may hold on to the records.
+    if (!s.scans3d || !s.scans3d.head || !s.scans3d.intraoral) s.scans3d = normalizeScans3D(s.scans3d);
+    return s.scans3d;
   }
 
   // Sync tooth presence across all tabs (plaque, bleeding, icdas, probing)

@@ -155,6 +155,7 @@ export interface TabDefinition {
   id: string;
   label: string;
   icon: string; // emoji or symbol
+  pwaOnly?: boolean; // hidden in the Excel task pane (too narrow, no file storage)
 }
 
 export const TABS: TabDefinition[] = [
@@ -164,6 +165,7 @@ export const TABS: TabDefinition[] = [
   { id: "icdas", label: "ICDAS", icon: "🔍" },
   { id: "probing", label: "Globine", icon: "📏" },
   { id: "radiographs", label: "RTG", icon: "🩻" },
+  { id: "scans3d", label: "3D", icon: "📐", pwaOnly: true },
   { id: "notes", label: "Opombe", icon: "📝" },
   { id: "ohip", label: "OHIP", icon: "📋" },
   { id: "fdi", label: "FDI", icon: "📊" },

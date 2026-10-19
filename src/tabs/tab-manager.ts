@@ -12,10 +12,12 @@ export class TabManager {
   private activeTabId: string | null = null;
   private tabBar: HTMLElement;
   private panelContainer: HTMLElement;
+  private includePwaOnly: boolean;
 
-  constructor(tabBar: HTMLElement, panelContainer: HTMLElement) {
+  constructor(tabBar: HTMLElement, panelContainer: HTMLElement, includePwaOnly = false) {
     this.tabBar = tabBar;
     this.panelContainer = panelContainer;
+    this.includePwaOnly = includePwaOnly;
     this.renderTabBar();
   }
 
@@ -61,6 +63,7 @@ export class TabManager {
   private renderTabBar(): void {
     this.tabBar.innerHTML = "";
     for (const tab of TABS) {
+      if (tab.pwaOnly && !this.includePwaOnly) continue;
       const btn = document.createElement("button");
       btn.className = "tab-btn";
       btn.dataset.tabId = tab.id;

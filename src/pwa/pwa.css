@@ -168,3 +168,162 @@
   body.report-open .report-scroll { overflow: visible; padding: 0; }
   body.report-open .report-sheet { box-shadow: none; max-width: none; min-width: 0; }
 }
+
+/* ── 3D scans tab ─────────────────────────────────────────────── */
+.s3-kind-bar { display: flex; gap: 6px; margin-bottom: 12px; }
+.s3-kind-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 1px solid #8a8886;
+  border-radius: 4px;
+  background: #fff;
+  color: #323130;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.s3-kind-btn.active { background: #0078d4; border-color: #0078d4; color: #fff; }
+.s3-kind-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.12);
+  font-size: 11px;
+}
+.s3-empty { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+
+.s3-parts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.s3-part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid #e1dfdd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.s3-part input { width: 20px; height: 20px; flex: none; }
+.s3-part-label { font-weight: 600; flex: none; }
+.s3-part-files { color: #605e5c; font-size: 11px; overflow-wrap: anywhere; }
+.s3-part.missing { border-color: #f2e0a0; background: #fff4ce; }
+
+.s3-unit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.s3-unit-row .form-label { margin: 0; }
+.s3-unit-select { width: auto; min-width: 72px; }
+.s3-unit-confirm { display: flex; align-items: center; gap: 4px; font-size: 13px; min-height: 44px; }
+.s3-unit-confirm input { width: 20px; height: 20px; }
+.s3-unit-warn { color: #a4262c; font-size: 12px; margin-bottom: 6px; }
+.s3-file-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+
+.s3-viewer-wrap { position: relative; margin-bottom: 12px; }
+.s3-viewer {
+  position: relative;
+  height: min(62vh, 620px);
+  min-height: 300px;
+  border: 1px solid #e1dfdd;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f3f4f6;
+}
+.s3-canvas { display: block; touch-action: none; }
+.s3-labels { position: absolute; top: 0; left: 0; pointer-events: none; }
+.s3-marker-label {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(21, 101, 192, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.s3-marker-label.active { background: rgba(230, 81, 0, 0.95); }
+.s3-viewer-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #605e5c;
+  font-size: 14px;
+  pointer-events: none;
+}
+.s3-viewer-msg[hidden] { display: none; }
+.s3-view-buttons { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; }
+.s3-view-buttons .btn { min-width: 40px; min-height: 40px; padding: 4px 8px; }
+
+.s3-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 6px; }
+.s3-section-head h3 { margin: 0; font-size: 15px; }
+.s3-count { color: #605e5c; font-weight: 400; font-size: 13px; }
+
+.s3-lm-list { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; }
+.s3-lm {
+  display: grid;
+  grid-template-columns: 52px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 2px 8px;
+  border: 1px solid #e1dfdd;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.s3-lm.placed { background: #f3f9fd; }
+.s3-lm.active { border-color: #e65100; background: #fff3e0; box-shadow: inset 3px 0 0 #e65100; }
+.s3-lm-abbr { font-weight: 700; color: #1565c0; }
+.s3-lm.active .s3-lm-abbr { color: #e65100; }
+.s3-lm-pos { color: #605e5c; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.s3-lm-del { min-width: 36px; min-height: 36px; padding: 0; }
+
+.s3-m-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 13px; }
+.s3-m-table td { padding: 6px 4px; border-bottom: 1px solid #edebe9; }
+.s3-m-val { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+@media (max-width: 420px) {
+  .s3-lm { grid-template-columns: 44px 1fr auto; }
+  .s3-lm-pos { grid-column: 2 / 3; text-align: left; }
+}
+
+/* Intraoral panels: upper jaw / lower jaw / occlusion */
+.s3-view-bar { display: flex; gap: 0; margin-bottom: 12px; border: 1px solid #0078d4; border-radius: 4px; overflow: hidden; }
+.s3-view-bar[hidden] { display: none; }
+.s3-view-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 0;
+  border-left: 1px solid #0078d4;
+  background: #fff;
+  color: #0078d4;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.s3-view-btn:first-child { border-left: 0; }
+.s3-view-btn.active { background: #0078d4; color: #fff; }
+.s3-view-btn.active .s3-count { color: rgba(255, 255, 255, 0.85); }
+.s3-role-select { width: auto; min-width: 150px; min-height: 36px; padding: 2px 6px; flex: none; }
+
+/* Rotation controls under the 3D viewer */
+.s3-rotate-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+.s3-rot-group { display: flex; align-items: center; gap: 4px; }
+.s3-rot-label { font-size: 12px; color: #605e5c; margin-right: 2px; }
+.s3-rot-group .btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 20px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.s3-rot-step select { width: auto; min-height: 44px; padding: 2px 6px; }

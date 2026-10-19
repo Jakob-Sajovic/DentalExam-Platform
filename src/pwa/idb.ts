@@ -2,12 +2,14 @@
 
 /**
  * Minimal promise wrapper over IndexedDB — no dependency, and enough for
- * one object store of examination sessions plus a little metadata.
+ * the examination sessions and the 3D scan files they refer to.
  */
 
 const DB_NAME = "dentalexam";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 export const STORE_SESSIONS = "sessions";
+// 3D scan files keyed by SHA-256, shared by every session that uses them (v2)
+export const STORE_SCAN_FILES = "scanFiles";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -20,6 +22,9 @@ export function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_SESSIONS)) {
         db.createObjectStore(STORE_SESSIONS, { keyPath: "sessionId" });
+      }
+      if (!db.objectStoreNames.contains(STORE_SCAN_FILES)) {
+        db.createObjectStore(STORE_SCAN_FILES, { keyPath: "sha256" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -85,4 +90,10 @@ export async function requestPersistence(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function idbGetAllKeys(storeName: string): Promise<string[]> {
+  const db = await openDb();
+  const req = db.transaction(storeName, "readonly").objectStore(storeName).getAllKeys();
+  return (await promisify(req)).map((k) => String(k));
 }

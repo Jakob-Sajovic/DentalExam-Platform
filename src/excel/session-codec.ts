@@ -40,6 +40,16 @@ import {
   makeDefaultRadiographs,
   makeDefaultOhipExtra,
 } from "../model/session";
+import {
+  SCAN_KINDS,
+  LANDMARK_SETS,
+  ScanUnit,
+  SCAN_UNIT_TO_MM,
+  Vec3,
+  computeMeasurements,
+  makeDefaultScans3D,
+  normalizeScans3D,
+} from "../model/scans3d";
 
 export const SHEET_NAME = "DentalExam_Data";
 export const IMAGE_SHEET_NAME = "DentalExam_Slike";
@@ -135,6 +145,15 @@ export function getColumnHeaders(): string[] {
   // Radiographs — text only; the image payloads live on DentalExam_Slike.
   // Each jaw's films share one cell: "18–16: annotation | — | 15–13: …"
   h.push("radio_mode", "radio_opinion", "radio_unlocked", "radio_composite_file", "radio_upper", "radio_lower");
+
+  // 3D scans — file references, landmark coordinates (file units) and the
+  // computed measurements (mm / degrees). The meshes themselves are not stored.
+  for (const kind of SCAN_KINDS) {
+    const set = LANDMARK_SETS[kind];
+    h.push(`s3_${kind}_parts`, `s3_${kind}_unit`, `s3_${kind}_unit_confirmed`, `s3_${kind}_set`, `s3_${kind}_note`);
+    for (const lm of set.landmarks) h.push(`s3_${kind}_lm_${lm.id}_x`, `s3_${kind}_lm_${lm.id}_y`, `s3_${kind}_lm_${lm.id}_z`);
+    for (const m of set.measurements) h.push(`s3_${kind}_m_${m.id}`);
+  }
 
   // Full JSON backup for reliable reload
   h.push("_json");
@@ -249,6 +268,24 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
     figuresToFlatText(radio.upper),
     figuresToFlatText(radio.lower)
   );
+
+  // 3D scans
+  const scans = normalizeScans3D(s.scans3d);
+  for (const kind of SCAN_KINDS) {
+    const rec = scans[kind];
+    row.push(
+      rec.parts.length ? JSON.stringify(rec.parts) : "",
+      rec.parts.length ? rec.unit : "",
+      rec.unitConfirmed,
+      rec.landmarkSet,
+      rec.note
+    );
+    for (const lm of LANDMARK_SETS[kind].landmarks) {
+      const p = rec.landmarks[lm.id];
+      row.push(p ? p[0] : null, p ? p[1] : null, p ? p[2] : null);
+    }
+    for (const m of computeMeasurements(kind, rec)) row.push(m.value);
+  }
 
   // JSON backup. Image data URLs are excluded — they would blow past Excel's
   // 32 767-character cell limit on their own.
@@ -544,7 +581,30 @@ export function rowToSession(
     ohip: [],
     ohipExtra: makeDefaultOhipExtra(),
     fdiQuestionnaire: makeDefaultFdiQuestionnaire(),
+    scans3d: makeDefaultScans3D(),
   };
+
+  // 3D scans — measurements are recomputed from the landmarks, never read back
+  for (const kind of SCAN_KINDS) {
+    const rec = session.scans3d[kind];
+    try {
+      const parts = JSON.parse(str(`s3_${kind}_parts`) || "[]");
+      if (Array.isArray(parts)) rec.parts = parts;
+    } catch {
+      /* unreadable part list: the landmarks below still load */
+    }
+    const unit = str(`s3_${kind}_unit`);
+    if (unit in SCAN_UNIT_TO_MM) rec.unit = unit as ScanUnit;
+    rec.unitConfirmed = bool(`s3_${kind}_unit_confirmed`);
+    rec.landmarkSet = str(`s3_${kind}_set`) || rec.landmarkSet;
+    rec.note = str(`s3_${kind}_note`);
+    for (const lm of LANDMARK_SETS[kind].landmarks) {
+      const x = num(`s3_${kind}_lm_${lm.id}_x`);
+      const y = num(`s3_${kind}_lm_${lm.id}_y`);
+      const z = num(`s3_${kind}_lm_${lm.id}_z`);
+      if (x !== null && y !== null && z !== null) rec.landmarks[lm.id] = [x, y, z] as Vec3;
+    }
+  }
 
   // Radiograph text columns — image payloads are restored from the image sheet
   const radio = session.radiographs;

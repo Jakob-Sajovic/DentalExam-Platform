@@ -10,6 +10,7 @@ import { PlaqueBleedingTabController } from "../tabs/tab-plaque-bleeding";
 import { ICDASTabController } from "../tabs/tab-icdas";
 import { ProbingTabController } from "../tabs/tab-probing";
 import { RadiographsTabController } from "../tabs/tab-radiographs";
+import { Scans3DTabController } from "../tabs/tab-scans3d";
 import { NotesTabController } from "../tabs/tab-notes";
 import { OhipTabController } from "../tabs/tab-ohip";
 import { FdiTabController } from "../tabs/tab-fdi";
@@ -27,7 +28,7 @@ function initApp(): void {
 
   const session = SessionState.getInstance();
   const store = new PwaStore();
-  const tabManager = new TabManager(tabBar, panelContainer);
+  const tabManager = new TabManager(tabBar, panelContainer, true);
 
   const landingCtrl = new PwaLandingTabController(session, store);
   landingCtrl.setTabManager(tabManager);
@@ -38,6 +39,7 @@ function initApp(): void {
   tabManager.registerController("icdas", new ICDASTabController(session));
   tabManager.registerController("probing", new ProbingTabController(session));
   tabManager.registerController("radiographs", new RadiographsTabController(session));
+  tabManager.registerController("scans3d", new Scans3DTabController(session, store.scanFiles));
   tabManager.registerController("notes", new NotesTabController(session));
   tabManager.registerController("ohip", new OhipTabController(session));
   tabManager.registerController("fdi", new FdiTabController(session));

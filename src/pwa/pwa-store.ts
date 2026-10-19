@@ -1,6 +1,7 @@
 import { ExaminationSession } from "../model/types";
 import { SessionStore, ActionLabel, LocalSessionApi, LocalSessionInfo } from "../storage/session-store";
 import { STORE_SESSIONS, idbPut, idbGet, idbGetAll, idbDelete } from "./idb";
+import { PwaScanFiles } from "./pwa-scan-files";
 import { buildWorkbook, readWorkbook, workbookFileName, downloadWorkbook } from "./workbook";
 
 /** What actually sits in IndexedDB: the session plus local bookkeeping. */
@@ -25,6 +26,8 @@ function describe(s: ExaminationSession): { title: string; subtitle: string } {
 }
 
 class PwaLocalSessions implements LocalSessionApi {
+  constructor(private readonly scanFiles: PwaScanFiles) {}
+
   async list(): Promise<LocalSessionInfo[]> {
     const all = await idbGetAll<StoredSession>(STORE_SESSIONS);
     return all
@@ -45,6 +48,13 @@ class PwaLocalSessions implements LocalSessionApi {
 
   async remove(sessionId: string): Promise<void> {
     await idbDelete(STORE_SESSIONS, sessionId);
+    // Scan files are shared between sessions; drop only the ones now unused.
+    try {
+      const rest = await idbGetAll<StoredSession>(STORE_SESSIONS);
+      await this.scanFiles.prune(rest.filter((r) => r && r.session).map((r) => r.session));
+    } catch {
+      /* leftover files only cost space; never block the delete */
+    }
   }
 
   async autosave(session: ExaminationSession): Promise<void> {
@@ -95,7 +105,8 @@ export class PwaStore implements SessionStore {
     "datoteko .xlsx v enakem formatu kot Excel dodatek — primerno za oddajo in za DentalCompiler.";
   readonly hostLoadAction: ActionLabel | null = null;
 
-  readonly local = new PwaLocalSessions();
+  readonly scanFiles = new PwaScanFiles();
+  readonly local = new PwaLocalSessions(this.scanFiles);
 
   async save(session: ExaminationSession): Promise<string> {
     await this.local.autosave(session);

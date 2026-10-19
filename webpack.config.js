@@ -11,6 +11,7 @@ const PWA_SHELL_FILES = [
   "index.html",
   "pwa.js",
   "report-pdf.js",
+  "scan3d.js",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",

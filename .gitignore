@@ -3,3 +3,7 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Example 3D scans (patient/biometric data, large) - never commit
+Head_3D_scans/
+Intraoral_3D_scans/
