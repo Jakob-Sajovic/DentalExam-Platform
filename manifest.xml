@@ -2,10 +2,10 @@
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
   <Id>857d363e-9341-4502-b51e-c51baef1a5ec</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>COMFORTage</ProviderName>
+  <ProviderName>Dentalni pregled — platforma</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Dentalni pregled — platforma"/>
-  <Description DefaultValue="Vnašalnik podatkov za dentalne preglede — COMFORTage"/>
+  <Description DefaultValue="Vnašalnik podatkov za dentalne preglede s 3D skeni — platforma"/>
   <IconUrl DefaultValue="https://jakob-sajovic.github.io/DentalExam-Platform/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://jakob-sajovic.github.io/DentalExam-Platform/assets/icon-64.png"/>
   <SupportUrl DefaultValue="https://github.com/Jakob-Sajovic/DentalExam-Platform"/>

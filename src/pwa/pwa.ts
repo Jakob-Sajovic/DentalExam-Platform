@@ -46,7 +46,7 @@ function initApp(): void {
   tabManager.registerController("save-report", new SaveReportTabController(session, store));
 
   const buildEl = document.getElementById("build-id");
-  if (buildEl) buildEl.textContent = `različica ${__PWA_BUILD_ID__}`;
+  if (buildEl) buildEl.textContent = `platforma · različica ${__PWA_BUILD_ID__}`;
 
   wireAutosave(session, store);
   tabManager.switchTo("landing");

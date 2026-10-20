@@ -3,43 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#00796b">
     <title>Dentalni pregled — platforma</title>
     <style>
+      :root { --accent: #00796b; --accent-bg: #e0f2f1; }
       body { font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-             background: #faf9f8; color: #323130; margin: 0; padding: 32px 20px; }
-      .wrap { max-width: 560px; margin: 0 auto; }
-      h1 { font-size: 22px; margin: 0 0 4px; }
-      p.sub { color: #605e5c; margin: 0 0 24px; font-size: 14px; }
+             background: #faf9f8; color: #323130; margin: 0; }
+      .band { background: var(--accent); color: #fff; padding: 28px 20px 24px; }
+      .band .inner, .wrap { max-width: 560px; margin: 0 auto; }
+      .eyebrow { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.85; }
+      h1 { font-size: 22px; margin: 0 0 6px; }
+      .band p.sub { margin: 0; font-size: 14px; opacity: 0.92; line-height: 1.45; }
+      .wrap { padding: 20px 20px 32px; }
       .card { display: block; background: #fff; border: 1px solid #e1dfdd; border-radius: 6px;
               padding: 16px; margin-bottom: 12px; text-decoration: none; color: inherit; }
-      .card:hover { border-color: #0078d4; }
-      .card h2 { font-size: 16px; margin: 0 0 4px; color: #0078d4; }
+      .card:hover { border-color: var(--accent); }
+      .card h2 { font-size: 16px; margin: 0 0 4px; color: var(--accent); }
       .card p { margin: 0; font-size: 13px; color: #605e5c; line-height: 1.5; }
       .tag { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
              letter-spacing: 0.4px; padding: 2px 6px; border-radius: 3px; margin-left: 6px;
-             background: #fff4ce; color: #797673; vertical-align: middle; }
+             background: var(--accent-bg); color: var(--accent); vertical-align: middle; }
+      .note { font-size: 13px; color: #605e5c; line-height: 1.5; border-left: 4px solid var(--accent);
+              background: #fff; padding: 10px 12px; margin-top: 20px; }
+      .note a { color: var(--accent); overflow-wrap: anywhere; }
     </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Zobozdravstveni pregled</h1>
-    <p class="sub">Platforma — razvojna različica s 3D skeni (ločena od stabilne aplikacije)</p>
+  <header class="band">
+    <div class="inner">
+      <p class="eyebrow">Dentalni pregled · platforma</p>
+      <h1>Zobozdravstveni pregled s 3D skeni</h1>
+      <p class="sub">Vnos kliničnih podatkov, rentgenskih slik ter 3D skenov glave in ustne votline
+        z meritvami na anatomskih točkah.</p>
+    </div>
+  </header>
 
+  <div class="wrap">
     <a class="card" href="pwa/">
-      <h2>Samostojna aplikacija<span class="tag">preizkus</span></h2>
-      <p>Deluje v brskalniku na računalniku in tablici, brez Excela in brez nameščanja dodatka.
-         Na tablici jo dodajte na začetni zaslon. Podatki se shranjujejo v napravo, izvozite jih v .xlsx.</p>
+      <h2>Samostojna aplikacija<span class="tag">3D</span></h2>
+      <p>Deluje v brskalniku na računalniku in tablici, brez Excela. Na tablici jo dodajte na
+         začetni zaslon. Podatki se shranjujejo v napravo, izvozite jih v .xlsx.</p>
+    </a>
+
+    <a class="card" href="navodila.html">
+      <h2>Navodila</h2>
+      <p>Namestitev, prvi zagon in zavihek 3D: katere datoteke izbrati, vrtenje modela in postavljanje točk.</p>
     </a>
 
     <a class="card" href="taskpane.html">
-      <h2>Excel dodatek</h2>
-      <p>Stran z dodatkom (task pane). Uporablja se prek Excela — dodatek namestite z datoteko manifest.xml.</p>
+      <h2>Excel dodatek<span class="tag">brez 3D</span></h2>
+      <p>Stran z dodatkom (task pane) za Excel. Zavihka 3D v dodatku ni — 3D skeni potrebujejo samostojno aplikacijo.</p>
     </a>
 
     <a class="card" href="manifest.xml">
       <h2>manifest.xml</h2>
-      <p>Datoteka za namestitev Excel dodatka. Shranite jo in jo dodajte med zaupanja vredne kataloge.</p>
+      <p>Datoteka za namestitev Excel dodatka »Dentalni pregled — platforma«.</p>
     </a>
+
+    <p class="note">Pregledi se hranijo v napravi, v kateri jih vnesete. Pregled iz druge
+      različice aplikacije prenesete z izvozom v .xlsx in uvozom na zavihku Začetek.</p>
   </div>
 </body>
 </html>

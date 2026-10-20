@@ -45,7 +45,7 @@ export class PwaLandingTabController implements TabController {
     panel.innerHTML = `
       <div class="landing-container">
         <h1 class="landing-title">Zobozdravstveni pregled</h1>
-        <p class="landing-subtitle">Vnos podatkov za pregled</p>
+        <p class="landing-subtitle">Platforma · s 3D skeni</p>
 
         <div class="landing-actions">
           <button id="btn-new-session" class="btn btn-primary btn-large">

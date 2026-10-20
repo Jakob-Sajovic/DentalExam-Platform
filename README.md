@@ -1,7 +1,8 @@
-# Vnašalnik podatkov COMFORTage — Dentalni pregledi
+# DentalExam Platform — Dentalni pregled s 3D skeni
 
-Dental examination data entry, saving, loading and PDF report generation. Built for the
-COMFORTage research project. UI language is **Slovenian**.
+Dental examination data entry, saving, loading and PDF report generation, extended with
+**3D surface scans** (Artec head scans, TRIOS intraoral scans) and preset landmark
+measurements. UI language is **Slovenian**.
 
 The same application ships as **two front-ends** built from one source tree:
 
@@ -16,7 +17,7 @@ The same application ships as **two front-ends** built from one source tree:
 Both write **byte-compatible `.xlsx`**, so `DentalCompiler` / `dental_compiler.py` reads
 output from either without changes.
 
-**Live:** [https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/](https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/)
+**Live:** [https://jakob-sajovic.github.io/DentalExam-Platform/](https://jakob-sajovic.github.io/DentalExam-Platform/)
 
 | URL | What |
 |---|---|
@@ -36,6 +37,7 @@ output from either without changes.
 - **Root caries** — per-tooth root caries assessment
 - **FDI questionnaire** — FDI Periodontal Disease Profile (8 questions); Q5–Q8 auto-calculated from existing clinical data (tooth loss, VPI%, GBI%, probing depths)
 - **OHIP-49 questionnaire** — 49-item oral health quality of life survey, 7 domains, Likert 0–4, auto-scored
+- **3D scans** (standalone app only) — Artec head scans (OBJ+MTL+texture, or STL) and TRIOS intraoral scans (STL/PLY) in a three.js viewer with free rotation (drag, plus turn/tilt/roll buttons in 1–90° steps); intraoral scans have separate *upper jaw*, *lower jaw* and *occlusion* panels; preset landmarks are placed by tapping and distances/angles are computed and saved as `s3_*` columns. Mesh files stay on the device (IndexedDB, keyed by SHA-256) and are never written into the `.xlsx`. Landmark lists are placeholders pending the clinical team.
 - **Notes** — free-text diagnostic and qualitative observations
 - **Cross-tab sync** — marking a tooth missing in VPI automatically updates bleeding, probing, and ICDAS (defaults to special code 97)
 - **Reset with confirmation** — all reset buttons use two-click confirmation (no browser dialogs)

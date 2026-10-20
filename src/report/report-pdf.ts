@@ -49,7 +49,7 @@ export async function renderReportPdf(report: HTMLElement, title: string): Promi
   doc.addFont("DejaVuSans.ttf", FONT, "normal");
   doc.addFileToVFS("DejaVuSans-Bold.ttf", DEJAVU_SANS_BOLD);
   doc.addFont("DejaVuSans-Bold.ttf", FONT, "bold");
-  doc.setProperties({ title, subject: "Zobozdravstveni pregled — COMFORTage", creator: "Dentalni pregled" });
+  doc.setProperties({ title, subject: "Zobozdravstveni pregled", creator: "Dentalni pregled" });
 
   const w = new DomPdfWriter(doc, report);
   await w.write();

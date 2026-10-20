@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Namestitev in prvi zagon — Samostojna aplikacija | COMFORTage</title>
+<title>Namestitev in prvi zagon — Dentalni pregled, platforma</title>
 <style>
   :root {
-    --blue: #0078d4; --blue-dark: #1f3b57; --ink: #242424; --muted: #605e5c;
+    --blue: #00796b; --blue-dark: #1f3b57; --ink: #242424; --muted: #605e5c;
     --line: #e1dfdd; --bg: #faf9f8; --card: #ffffff;
     --red: #a4262c; --red-bg: #fdf3f4; --green: #0b6a0b; --green-bg: #f1faf1;
     --amber: #8a6d00; --amber-bg: #fff8e6;
@@ -136,7 +136,7 @@
 
 <header class="hero">
   <div class="inner">
-    <p class="eyebrow">COMFORTage &middot; Dentalni pregledi</p>
+    <p class="eyebrow">Dentalni pregled &middot; platforma s 3D skeni</p>
     <h1>Namestitev in prvi zagon</h1>
     <p>Samostojna aplikacija za vnos podatkov zobozdravstvenega pregleda —
        deluje brez Excela, brez dodatka in brez Microsoftovega računa.</p>
@@ -148,6 +148,13 @@
 <p class="lede">Ta navodila vas vodijo od spletnega naslova do nameščene aplikacije na
 začetnem zaslonu in do prvega preizkusnega pregleda. Vzemite si deset minut in
 naredite vse korake po vrsti — najbolje <strong>pred prvim pravim pacientom</strong>.</p>
+
+<div class="note">
+  <strong>To je platformna različica aplikacije</strong> — z zavihkom za 3D skene glave in
+  ustne votline. Ima svoj spletni naslov in svoje shranjene preglede: pregled iz druge
+  različice aplikacije prenesete tako, da ga tam izvozite v <code>.xlsx</code> in tukaj
+  uvozite na zavihku <em>Začetek</em>.
+</div>
 
 <div class="warn">
   <strong>Najpomembnejše, preden začnete:</strong> pregled, ki ga vnesete, je shranjen
@@ -171,7 +178,7 @@ Vsakodnevni vnos deluje tudi <strong>povsem brez povezave</strong>.</p>
 <h2>2. Odprite spletni naslov</h2>
 <div class="urlbox">
   Vpišite (ali prilepite) v naslovno vrstico brskalnika:<br>
-  <a href="https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/">https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/</a>
+  <a href="https://jakob-sajovic.github.io/DentalExam-Platform/">https://jakob-sajovic.github.io/DentalExam-Platform/</a>
 </div>
 <p>Odpre se stran z izbiro. Tapnite oziroma kliknite prvo kartico —
 <strong>»Samostojna aplikacija«</strong>.</p>
@@ -184,7 +191,7 @@ Vsakodnevni vnos deluje tudi <strong>povsem brez povezave</strong>.</p>
 
 <div class="tip">
   <strong>Bližnjica:</strong> aplikacijo lahko odprete tudi neposredno na naslovu
-  <a href="https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/pwa/">https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/pwa/</a> in preskočite stran z izbiro.
+  <a href="https://jakob-sajovic.github.io/DentalExam-Platform/pwa/">https://jakob-sajovic.github.io/DentalExam-Platform/pwa/</a> in preskočite stran z izbiro.
 </div>
 
 <h2>3. Aplikacija se odpre</h2>
@@ -340,6 +347,32 @@ Vnos poteka enako; podroben klinični opis je v dokumentu <em>Navodila za uporab
   <code>01_</code>, <code>02_</code> … Vrstni red izbiranja ni pomemben.</figcaption>
 </figure>
 
+<h3>Zavihek 3D</h3>
+<p>Novost te različice. Na voljo je samo v samostojni aplikaciji, ne v Excel dodatku.</p>
+<ul>
+  <li><strong>Glava (Artec):</strong> izberite izvoz iz Artec Studia — datoteko <code>.obj</code>
+      skupaj z <code>.mtl</code> in teksturo <code>.jpg</code> (vse hkrati). Samo <code>.stl</code>
+      deluje tudi, a brez barve.</li>
+  <li><strong>Intraoralno (TRIOS):</strong> izberite izvožene <code>.stl</code> ali <code>.ply</code>
+      datoteke zgornje in spodnje čeljusti ter po želji skene griza — vse hkrati. Sken ima tri
+      poglede z ločenimi točkami in meritvami: <em>Zgornja čeljust</em>, <em>Spodnja čeljust</em>
+      in <em>Okluzija</em>. Če iz imena datoteke ni razvidno, katera čeljust je, ji vlogo nastavite
+      na pogledu <em>Okluzija</em>. Datoteke <code>.dcm</code> in <code>.3oxz</code> še niso podprte.</li>
+  <li><strong>Vrtenje:</strong> model vrtite z vlečenjem (miška ali en prst), povečate s kolescem
+      ali dvema prstoma, premaknete z desnim gumbom miške. Gumbi pod modelom ga zasukajo, nagnejo
+      ali zavrtijo za izbrani korak (1° do 90°); pridržan gumb vrti zvezno.</li>
+  <li><strong>Točke:</strong> na seznamu izberite točko in tapnite na model; aplikacija nato sama
+      izbere naslednjo. Meritve (razdalje v mm, koti v stopinjah) se izračunajo sproti.
+      Seznam točk je zaenkrat <strong>osnutek</strong>.</li>
+  <li><strong>Enota:</strong> preverite prikazano velikost modela in označite »preverjeno«.</li>
+</ul>
+<div class="warn">
+  <strong>3D datoteke niso del izvoza .xlsx.</strong> Vanj se shranijo samo koordinate točk in
+  meritve. Datoteke skena ostanejo v napravi, kjer ste jih naložili; na drugi napravi jih
+  aplikacija zahteva znova (in preveri, da gre za iste datoteke). Izvirnike skenov zato hranite
+  sami, varno in zaščiteno z geslom — gre za osebne podatke.
+</div>
+
 <h2>9. Posodobitve</h2>
 <p>Aplikacija se posodablja sama. Ko je na voljo nova različica, se na vrhu pojavi modra vrstica:</p>
 
@@ -429,16 +462,15 @@ Vnos poteka enako; podroben klinični opis je v dokumentu <em>Navodila za uporab
 
 <footer>
   <p><strong>Povezave</strong><br>
-    Aplikacija: <a href="https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/pwa/">https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/pwa/</a><br>
-    Stran z izbiro: <a href="https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/">https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/</a></p>
+    Aplikacija: <a href="https://jakob-sajovic.github.io/DentalExam-Platform/pwa/">https://jakob-sajovic.github.io/DentalExam-Platform/pwa/</a><br>
+    Stran z izbiro: <a href="https://jakob-sajovic.github.io/DentalExam-Platform/">https://jakob-sajovic.github.io/DentalExam-Platform/</a></p>
   <p><strong>Podrobnejša navodila</strong><br>
     <em>Navodila za uporabo — samostojna aplikacija</em> (.docx) — vsa poglavja, vključno s
     podrobnimi pravili o hranjenju podatkov.<br>
     <em>Navodila za uporabo</em> (.docx) — klinični opis vseh zavihkov in zbiralnik podatkov.</p>
   <p>Ob javljanju težave navedite napravo in brskalnik, številko različice z vrha zaslona,
     kaj ste delali tik pred težavo, in ali je bil pregled že izvožen.</p>
-  <p style="margin-top:18px; font-size:13px;">COMFORTage &middot; Vnašalnik podatkov —
-    dentalni pregledi</p>
+  <p style="margin-top:18px; font-size:13px;">Dentalni pregled &middot; platforma s 3D skeni</p>
 </footer>
 
 </div>

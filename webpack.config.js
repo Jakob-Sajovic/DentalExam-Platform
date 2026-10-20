@@ -112,6 +112,10 @@ module.exports = async (env, options) => {
             to: "index.html",
           },
           {
+            from: "navodila-samostojna-aplikacija.html",
+            to: "navodila.html",
+          },
+          {
             from: "manifest*.xml",
             to: "[name]" + "[ext]",
             transform(content) {

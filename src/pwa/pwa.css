@@ -327,3 +327,15 @@
   -webkit-user-select: none;
 }
 .s3-rot-step select { width: auto; min-height: 44px; padding: 2px 6px; }
+
+/* Platform look: teal accent, distinct from the blue of the original app */
+.tab-btn.active { color: #00796b; }
+.tab-btn.active::after { background: #00796b; }
+.btn-primary { background: #00796b; border-color: #00796b; }
+.btn-primary:hover { background: #00695c; }
+.btn-primary:active { background: #004d40; }
+.autosave-bar { border-bottom: 3px solid #00796b; }
+.build-id { color: #00796b; font-weight: 600; }
+.s3-kind-btn.active, .s3-view-btn.active { background: #00796b; border-color: #00796b; }
+.s3-view-bar { border-color: #00796b; }
+.s3-view-btn { color: #00796b; border-left-color: #00796b; }
