@@ -12,7 +12,10 @@
 // what makes the browser see a byte-changed worker, re-install it, and drop
 // the previous cache — without it a redeploy would never reach installed apps.
 const BUILD = self.__BUILD_ID__ || "dev";
-const CACHE = "dentalexam-pwa-" + BUILD;
+// Every app on jakob-sajovic.github.io shares one CacheStorage, so this app
+// names its caches with its own prefix and only ever deletes those.
+const CACHE_PREFIX = "dentalexam-platform-pwa-";
+const CACHE = CACHE_PREFIX + BUILD;
 
 // Filled in at build time with the emitted asset names.
 const SHELL = self.__SHELL_FILES__ || ["./"];
@@ -31,7 +34,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

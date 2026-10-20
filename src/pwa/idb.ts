@@ -5,7 +5,9 @@
  * the examination sessions and the 3D scan files they refer to.
  */
 
-const DB_NAME = "dentalexam";
+// Not "dentalexam": the stable app on the same github.io origin uses that name
+// at version 1, and opening it here at version 2 would lock the stable app out.
+const DB_NAME = "dentalexam-platform";
 const DB_VERSION = 2;
 export const STORE_SESSIONS = "sessions";
 // 3D scan files keyed by SHA-256, shared by every session that uses them (v2)

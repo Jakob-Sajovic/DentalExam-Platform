@@ -21,7 +21,7 @@ const PWA_SHELL_FILES = [
 const PWA_BUILD_ID = new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14);
 
 const urlDev = "https://localhost:3000/";
-const urlProd = "https://jakob-sajovic.github.io/Vna-alnik-podatkov-COMFORTage-Dentalni-pregledi/";
+const urlProd = "https://jakob-sajovic.github.io/DentalExam-Platform/";
 
 async function getHttpsOptions() {
   const httpsOptions = await devCerts.getHttpsServerOptions();
