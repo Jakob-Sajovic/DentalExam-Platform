@@ -1,0 +1,1 @@
+{"version":3,"file":"commands.js","mappings":"AAEAA,OAAOC,QAAQ,WACb","sources":["webpack://office-addin-taskpane/./src/commands/commands.ts"],"sourcesContent":["/* global Office */\n\nOffice.onReady(() => {\n  // Office.js is ready to be called.\n});\n"],"names":["Office","onReady"],"sourceRoot":""}
