@@ -870,9 +870,14 @@ export class Scans3DTabController implements TabController {
     return this.cameras.get(this.cameraKey(view)) || this.viewer.framedState(...VIEW_CAMERA[view], parts);
   }
 
-  private takeSnapshots(): void {
+  /**
+   * Take the report pictures. From the button they use each panel's current
+   * view (the operator framed it); taken automatically they use the panels'
+   * default views, which are the front and occlusal views of the exports.
+   */
+  private takeSnapshots(auto = false): void {
     if (!this.viewer || !this.session.hasSession() || this.busy || this.missing.length) {
-      this.setStatus("warn", "Za posnetke morajo biti naložene vse datoteke skena.");
+      if (!auto) this.setStatus("warn", "Za posnetke morajo biti naložene vse datoteke skena.");
       return;
     }
     const r = this.record();
@@ -881,7 +886,11 @@ export class Scans3DTabController implements TabController {
     for (const plan of SNAPSHOT_PLAN[this.kind]) {
       if (!views.includes(plan.view)) continue;
       const parts = this.partsInView(plan.view).filter((x) => x.visible).map((x) => x.part.id);
-      const base = parts.length ? this.panelCamera(plan.view, parts) : null;
+      const base = !parts.length
+        ? null
+        : auto
+          ? this.viewer.framedState(...VIEW_CAMERA[plan.view], parts)
+          : this.panelCamera(plan.view, parts);
       if (!base) continue;
       const camera = plan.turn ? this.viewer.rotatedState(base, "turn", plan.turn) : base;
       planned.push({ id: plan.id, label: plan.label, view: plan.view, camera, parts });
@@ -893,7 +902,7 @@ export class Scans3DTabController implements TabController {
       r.snapshots[p.id] = { label: p.label, dataUrl: "", width: SNAPSHOT_W, height: SNAPSHOT_H, view: p.view, camera: p.camera, parts: p.parts };
     }
     const n = this.renderSnapshotImages();
-    this.setStatus("ok", `Shranjenih ${n} posnetkov za poročilo.`);
+    if (!auto) this.setStatus("ok", `Shranjenih ${n} posnetkov za poročilo.`);
     this.renderSnapshots();
   }
 
@@ -929,10 +938,20 @@ export class Scans3DTabController implements TabController {
    */
   private refreshSnapshotsIfStale(): void {
     if (!this.viewer || !this.session.hasSession() || this.busy || this.missing.length) return;
-    if (this.viewerKey !== this.recordKey()) return;
     const r = this.record();
+    if (this.viewerKey !== this.recordKey() || r.parts.length === 0) return;
     const snaps = Object.values(r.snapshots);
-    if (!snaps.length) return;
+    if (!snaps.length) {
+      // Nothing taken yet: once there is something marked on the scan, the
+      // report gets its pictures without anyone having to remember the button
+      if (Object.keys(r.landmarks).length || Object.keys(r.teeth).length) this.takeSnapshots(true);
+      return;
+    }
+    // Pictures from before cameras were stored cannot be retaken as they were
+    if (snaps.some((x) => !x.camera)) {
+      this.takeSnapshots(true);
+      return;
+    }
     const stamp = overlayStamp(r);
     if (snaps.every((x) => x.stamp === stamp)) return;
     this.renderSnapshotImages();
@@ -946,8 +965,8 @@ export class Scans3DTabController implements TabController {
     const r = this.record();
     hint.textContent =
       this.kind === "head"
-        ? "Pred posnetkom obrnite glavo, da jo gledate od spredaj (⟲ = privzeti pogled); stranski in zadnji pogled se izračunajo."
-        : "Uporabijo se trenutni pogledi panelov: čeljusti od zgoraj, griz od spredaj (⟲ = privzeti pogled); stranska pogleda se izračunata.";
+        ? "Slike za poročilo nastanejo same ob odhodu z zavihka (privzeti pogled). Z gumbom jih posnamete iz trenutnega pogleda — glavo najprej obrnite od spredaj."
+        : "Slike za poročilo nastanejo same ob odhodu z zavihka (privzeti pogledi). Z gumbom jih posnamete iz trenutnih pogledov panelov — griz od spredaj.";
     const shots = SNAPSHOT_PLAN[this.kind].filter((p) => r.snapshots[p.id]?.dataUrl);
     if (!shots.length) {
       host.innerHTML = "";

@@ -106,6 +106,8 @@ const MARKER_ACTIVE_COLOR = 0xe65100;
 const TOOTH_COLOR = 0x00796b;
 // Screen pixels, whatever the zoom
 const LINE_WIDTH_PX = 3;
+// Report pictures are printed small: draw points, lines and labels larger
+const SNAPSHOT_OVERLAY_SCALE = 2.2;
 // A press that moves less than this, and lifts this quickly, is a tap (place a
 // landmark); anything else is a rotate/zoom gesture for the controls.
 const TAP_MAX_MOVE_PX = 6;
@@ -442,8 +444,10 @@ export class ScanViewer {
     const saved = this.getCameraState();
     const visible = new Map(Array.from(this.parts.entries()).map(([id, o]) => [id, o.visible]));
     const pixelRatio = this.renderer.getPixelRatio();
+    const radius = this.markerRadius;
     const out: { id: string; dataUrl: string }[] = [];
     try {
+      this.markerRadius = radius * SNAPSHOT_OVERLAY_SCALE;
       this.renderer.setPixelRatio(1);
       // Leave the canvas's on-page size alone (updateStyle = false)
       this.renderer.setSize(width, height, false);
@@ -453,7 +457,10 @@ export class ScanViewer {
         this.setMarkers(spec.markers);
         this.setLines(spec.lines);
         this.setToothLabels(spec.teeth);
-        for (const m of this.lineMaterials) m.resolution.set(width, height);
+        for (const m of this.lineMaterials) {
+          m.resolution.set(width, height);
+          m.linewidth = LINE_WIDTH_PX * SNAPSHOT_OVERLAY_SCALE;
+        }
         this.camera.up.set(...spec.camera.up);
         this.camera.position.set(...spec.camera.position);
         const target = new THREE.Vector3(...spec.camera.target);
@@ -474,12 +481,13 @@ export class ScanViewer {
         if (labels.length) {
           const shown = this.pointsInSight(labels.map((l) => l.at), width, height);
           labels.forEach((l, i) => {
-            if (shown[i]) drawLabel(ctx, this.toPixel(l.at, width, height), l.text, l.tooth);
+            if (shown[i]) drawLabel(ctx, this.toPixel(l.at, width, height), l.text, l.tooth, SNAPSHOT_OVERLAY_SCALE);
           });
         }
         out.push({ id: spec.id, dataUrl: canvas.toDataURL("image/jpeg", 0.88) });
       }
     } finally {
+      this.markerRadius = radius;
       for (const [id, obj] of Array.from(this.parts.entries())) obj.visible = visible.get(id) ?? true;
       this.renderer.setPixelRatio(pixelRatio);
       this.resize();
@@ -721,19 +729,19 @@ export class ScanViewer {
 }
 
 /** A point label painted onto a report picture, styled like the viewer's. */
-function drawLabel(ctx: CanvasRenderingContext2D, at: [number, number], text: string, tooth: boolean): void {
-  ctx.font = "bold 13px 'Segoe UI', sans-serif";
-  const w = ctx.measureText(text).width + 8;
-  const h = 17;
+function drawLabel(ctx: CanvasRenderingContext2D, at: [number, number], text: string, tooth: boolean, scale: number): void {
+  ctx.font = `bold ${Math.round(12 * scale)}px 'Segoe UI', sans-serif`;
+  const w = ctx.measureText(text).width + 6 * scale;
+  const h = 15 * scale;
   const x = at[0] - w / 2;
-  const y = at[1] - h - 7;
+  const y = at[1] - h - 5 * scale;
   ctx.beginPath();
   ctx.rect(x, y, w, h);
   ctx.fillStyle = tooth ? "rgba(255, 255, 255, 0.92)" : "rgba(21, 101, 192, 0.9)";
   ctx.fill();
   if (tooth) {
     ctx.strokeStyle = "#00796b";
-    ctx.lineWidth = 1;
+    ctx.lineWidth = scale;
     ctx.stroke();
   }
   ctx.fillStyle = tooth ? "#00594f" : "#ffffff";
