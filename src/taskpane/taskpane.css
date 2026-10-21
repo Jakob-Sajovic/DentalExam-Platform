@@ -1656,3 +1656,43 @@ tr.furc-disabled {
 }
 
 .rtg-slot-file-missing { color: #a19f9d; font-family: inherit; font-style: italic; }
+
+/* ===== Fillings tab: brush + five-surface chart (from the cleft-study app) ===== */
+.fc-count {
+  background: #fff; border: 1px solid #edebe9; border-radius: 5px;
+  padding: 10px 12px; margin-bottom: 12px; font-size: 14px; text-align: center;
+}
+.fc-count strong { color: #0078d4; font-size: 17px; }
+.fc-count-sub { color: #605e5c; font-size: 12px; margin-top: 2px; }
+.fc-brush-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.fc-brush {
+  min-height: 44px; padding: 4px 10px;
+  border: 2px solid #d2d0ce; border-radius: 5px; background: var(--brush-color, #fff);
+  font-family: inherit; font-size: 13px; color: #201f1e; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.fc-brush-erase { background: #fff; color: #605e5c; }
+.fc-brush.active { border-color: #0078d4; box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.25); }
+.fc-brush-desc { font-size: 12px; color: #605e5c; margin: 0 0 12px; min-height: 16px; }
+.fc-chart { background: #fff; border: 1px solid #edebe9; border-radius: 6px; padding: 10px 8px; margin-bottom: 12px; }
+.fc-row { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
+.fc-numbers { margin: 3px 0; }
+.fc-number { text-align: center; font-size: 9px; color: #605e5c; min-width: 0; }
+.fc-jaw-label { text-align: center; font-size: 10px; color: #a19f9d; margin: 3px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+.fc-sides { display: flex; justify-content: space-between; font-size: 9px; color: #a19f9d; letter-spacing: 0.4px; margin-top: 4px; }
+.fc-cell { aspect-ratio: 1; position: relative; min-width: 0; }
+.fc-cell.disabled { opacity: 0.35; }
+.fc-svg { width: 100%; height: 100%; display: block; }
+.fc-surface { fill: #fff; stroke: #8a8886; stroke-width: 0.5; cursor: pointer; transition: fill 0.1s; }
+.fc-cell.disabled .fc-surface { cursor: default; }
+.fc-surface:hover { stroke: #0078d4; stroke-width: 1; }
+.fc-border { fill: none; stroke: #605e5c; stroke-width: 1; }
+.fc-surface-text {
+  font-size: 9px; font-family: "Segoe UI", sans-serif; font-weight: 700;
+  fill: #201f1e; text-anchor: middle; pointer-events: none; user-select: none;
+}
+@media (max-width: 560px) {
+  .fc-chart { padding: 8px 5px; }
+  .fc-row { gap: 1px; }
+  .fc-number { font-size: 7.5px; }
+}

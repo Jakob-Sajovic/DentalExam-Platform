@@ -42,13 +42,21 @@ import {
 } from "../model/session";
 import {
   SCAN_KINDS,
-  LANDMARK_SETS,
+  allLandmarks,
+  allMeasurements,
+  activeSet,
+  DENTITION_STAGES,
+  DentitionStage,
+  CLEFT_TYPES,
+  CleftType,
   ScanUnit,
   SCAN_UNIT_TO_MM,
   Vec3,
   computeMeasurements,
   makeDefaultScans3D,
   normalizeScans3D,
+  encodeTeeth,
+  decodeTeeth,
 } from "../model/scans3d";
 
 export const SHEET_NAME = "DentalExam_Data";
@@ -148,11 +156,14 @@ export function getColumnHeaders(): string[] {
 
   // 3D scans — file references, landmark coordinates (file units) and the
   // computed measurements (mm / degrees). The meshes themselves are not stored.
+  // Every list's points and measurements get columns (each id once), so a
+  // column means the same thing whichever list a patient was measured with.
   for (const kind of SCAN_KINDS) {
-    const set = LANDMARK_SETS[kind];
     h.push(`s3_${kind}_parts`, `s3_${kind}_unit`, `s3_${kind}_unit_confirmed`, `s3_${kind}_set`, `s3_${kind}_note`);
-    for (const lm of set.landmarks) h.push(`s3_${kind}_lm_${lm.id}_x`, `s3_${kind}_lm_${lm.id}_y`, `s3_${kind}_lm_${lm.id}_z`);
-    for (const m of set.measurements) h.push(`s3_${kind}_m_${m.id}`);
+    if (kind === "intraoral") h.push(`s3_${kind}_stage`, `s3_${kind}_cleft`);
+    for (const lm of allLandmarks(kind)) h.push(`s3_${kind}_lm_${lm.id}_x`, `s3_${kind}_lm_${lm.id}_y`, `s3_${kind}_lm_${lm.id}_z`);
+    for (const m of allMeasurements(kind)) h.push(`s3_${kind}_m_${m.id}`);
+    if (kind === "intraoral") h.push(`s3_${kind}_teeth`);
   }
 
   // Full JSON backup for reliable reload
@@ -280,11 +291,15 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
       rec.landmarkSet,
       rec.note
     );
-    for (const lm of LANDMARK_SETS[kind].landmarks) {
+    if (kind === "intraoral") row.push(rec.stage, rec.cleft);
+    for (const lm of allLandmarks(kind)) {
       const p = rec.landmarks[lm.id];
       row.push(p ? p[0] : null, p ? p[1] : null, p ? p[2] : null);
     }
-    for (const m of computeMeasurements(kind, rec)) row.push(m.value);
+    // Only the active list's measurements are filled; the others stay empty
+    const active = new Set(activeSet(kind, rec).measurements.map((m) => m.id));
+    for (const m of computeMeasurements(kind, rec, allMeasurements(kind))) row.push(active.has(m.def.id) ? m.value : null);
+    if (kind === "intraoral") row.push(encodeTeeth(rec.teeth));
   }
 
   // JSON backup. Image data URLs are excluded — they would blow past Excel's
@@ -598,12 +613,19 @@ export function rowToSession(
     rec.unitConfirmed = bool(`s3_${kind}_unit_confirmed`);
     rec.landmarkSet = str(`s3_${kind}_set`) || rec.landmarkSet;
     rec.note = str(`s3_${kind}_note`);
-    for (const lm of LANDMARK_SETS[kind].landmarks) {
+    if (kind === "intraoral") {
+      const stage = str(`s3_${kind}_stage`);
+      if (DENTITION_STAGES.includes(stage as DentitionStage)) rec.stage = stage as DentitionStage;
+      const cleft = str(`s3_${kind}_cleft`);
+      if (CLEFT_TYPES.includes(cleft as CleftType)) rec.cleft = cleft as CleftType;
+    }
+    for (const lm of allLandmarks(kind)) {
       const x = num(`s3_${kind}_lm_${lm.id}_x`);
       const y = num(`s3_${kind}_lm_${lm.id}_y`);
       const z = num(`s3_${kind}_lm_${lm.id}_z`);
       if (x !== null && y !== null && z !== null) rec.landmarks[lm.id] = [x, y, z] as Vec3;
     }
+    if (kind === "intraoral") rec.teeth = decodeTeeth(str(`s3_${kind}_teeth`));
   }
 
   // Radiograph text columns — image payloads are restored from the image sheet

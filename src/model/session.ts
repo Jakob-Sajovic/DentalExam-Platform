@@ -323,9 +323,11 @@ export class SessionState {
 
   getScans3D(): Scans3DData {
     const s = this.getSession();
-    // Sessions saved before the 3D tab existed have no scans3d at all. Only
-    // replaced when incomplete, so callers may hold on to the records.
-    if (!s.scans3d || !s.scans3d.head || !s.scans3d.intraoral) s.scans3d = normalizeScans3D(s.scans3d);
+    // Sessions saved before the 3D tab (or its tooth labels) existed lack
+    // parts of scans3d. Only replaced when incomplete, so callers may hold on
+    // to the records.
+    const d = s.scans3d;
+    if (!d || !d.head || !d.intraoral || !d.head.teeth || !d.intraoral.teeth) s.scans3d = normalizeScans3D(d);
     return s.scans3d;
   }
 
@@ -391,6 +393,9 @@ export class SessionState {
         (s.icdasRootCaries[tooth] as Record<string, number | null>)[site] = val;
       }
     }
+
+    // 3D tooth label — a missing tooth has nothing on the scan to label
+    if (!present && s.scans3d?.intraoral?.teeth) delete s.scans3d.intraoral.teeth[String(tooth)];
 
     // ICDAS — a tooth marked missing from another tab becomes a plain missing
     // tooth (97) unless it already carries a non-implant special code.

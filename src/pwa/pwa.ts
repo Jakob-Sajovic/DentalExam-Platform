@@ -8,6 +8,7 @@ import { PwaLandingTabController } from "./tab-pwa-landing";
 import { PatientTabController } from "../tabs/tab-patient";
 import { PlaqueBleedingTabController } from "../tabs/tab-plaque-bleeding";
 import { ICDASTabController } from "../tabs/tab-icdas";
+import { FillingsTabController } from "../tabs/tab-fillings";
 import { ProbingTabController } from "../tabs/tab-probing";
 import { RadiographsTabController } from "../tabs/tab-radiographs";
 import { Scans3DTabController } from "../tabs/tab-scans3d";
@@ -37,6 +38,7 @@ function initApp(): void {
   tabManager.registerController("patient", new PatientTabController(session));
   tabManager.registerController("plaque-bleeding", new PlaqueBleedingTabController(session));
   tabManager.registerController("icdas", new ICDASTabController(session));
+  tabManager.registerController("fillings", new FillingsTabController(session));
   tabManager.registerController("probing", new ProbingTabController(session));
   tabManager.registerController("radiographs", new RadiographsTabController(session));
   tabManager.registerController("scans3d", new Scans3DTabController(session, store.scanFiles));

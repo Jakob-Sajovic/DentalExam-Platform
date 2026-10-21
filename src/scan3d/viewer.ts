@@ -16,6 +16,9 @@ import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { CSS2DRenderer, CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Vec3, fileExtension } from "../model/scans3d";
 
 export interface ViewerFile {
@@ -33,6 +36,21 @@ export interface ViewerPartInput {
 export interface ViewerMarker {
   id: string;
   abbr: string;
+  position: Vec3;
+  active: boolean;
+}
+
+/** A measurement drawn between its landmarks: one segment, or two for an angle. */
+export interface ViewerLine {
+  segments: [Vec3, Vec3][];
+  /** Any CSS colour. */
+  color: string;
+}
+
+/** A tooth number placed on an intraoral scan. */
+export interface ViewerToothLabel {
+  id: string;
+  text: string;
   position: Vec3;
   active: boolean;
 }
@@ -56,6 +74,9 @@ export interface CameraState {
 const SURFACE_COLOR = 0xd9d2c5;
 const MARKER_COLOR = 0x1565c0;
 const MARKER_ACTIVE_COLOR = 0xe65100;
+const TOOTH_COLOR = 0x00796b;
+// Screen pixels, whatever the zoom
+const LINE_WIDTH_PX = 3;
 // A press that moves less than this, and lifts this quickly, is a tap (place a
 // landmark); anything else is a rotate/zoom gesture for the controls.
 const TAP_MAX_MOVE_PX = 6;
@@ -78,6 +99,9 @@ export class ScanViewer {
   private settleFrames = 0;
   private parts = new Map<string, THREE.Object3D>();
   private markerGroup = new THREE.Group();
+  private lineGroup = new THREE.Group();
+  private toothGroup = new THREE.Group();
+  private lineMaterials: LineMaterial[] = [];
   private markerRadius = 1;
   private objectUrls: string[] = [];
   private renderQueued = false;
@@ -113,6 +137,8 @@ export class ScanViewer {
     this.scene.add(this.camera);
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
     this.scene.add(this.markerGroup);
+    this.scene.add(this.lineGroup);
+    this.scene.add(this.toothGroup);
 
     this.controls = new TrackballControls(this.camera, this.renderer.domElement);
     this.controls.rotateSpeed = 2.5;
@@ -238,10 +264,7 @@ export class ScanViewer {
   }
 
   setMarkers(markers: ViewerMarker[]): void {
-    for (const child of [...this.markerGroup.children]) {
-      this.markerGroup.remove(child);
-      disposeObject(child);
-    }
+    clearGroup(this.markerGroup);
     const geometry = new THREE.SphereGeometry(1, 16, 12);
     for (const m of markers) {
       const sphere = new THREE.Mesh(
@@ -260,6 +283,53 @@ export class ScanViewer {
       sphere.add(labelObj);
 
       this.markerGroup.add(sphere);
+    }
+    this.requestRender();
+  }
+
+  /** Measurement lines, drawn over the surface so they are never hidden by it. */
+  setLines(lines: ViewerLine[]): void {
+    clearGroup(this.lineGroup);
+    this.lineMaterials = [];
+    for (const line of lines) {
+      const geometry = new LineSegmentsGeometry();
+      geometry.setPositions(line.segments.flatMap(([a, b]) => [...a, ...b]));
+      const material = new LineMaterial({
+        color: new THREE.Color(line.color).getHex(),
+        linewidth: LINE_WIDTH_PX,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.9,
+      });
+      material.resolution.set(this.container.clientWidth || 1, this.container.clientHeight || 1);
+      this.lineMaterials.push(material);
+      const obj = new LineSegments2(geometry, material);
+      obj.renderOrder = 10;
+      this.lineGroup.add(obj);
+    }
+    this.requestRender();
+  }
+
+  /** Tooth number labels: a small dot on the tooth with its FDI number above it. */
+  setToothLabels(labels: ViewerToothLabel[]): void {
+    clearGroup(this.toothGroup);
+    const geometry = new THREE.SphereGeometry(1, 12, 8);
+    for (const t of labels) {
+      const dot = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({ color: t.active ? MARKER_ACTIVE_COLOR : TOOTH_COLOR })
+      );
+      dot.position.set(t.position[0], t.position[1], t.position[2]);
+      dot.scale.setScalar(this.markerRadius * 0.7);
+
+      const label = document.createElement("div");
+      label.className = "s3-tooth-label" + (t.active ? " active" : "");
+      label.textContent = t.text;
+      const labelObj = new CSS2DObject(label);
+      labelObj.position.set(0, 2.5, 0);
+      dot.add(labelObj);
+
+      this.toothGroup.add(dot);
     }
     this.requestRender();
   }
@@ -423,6 +493,7 @@ export class ScanViewer {
     if (w === 0 || h === 0) return; // hidden tab
     this.renderer.setSize(w, h);
     this.labelRenderer.setSize(w, h);
+    for (const m of this.lineMaterials) m.resolution.set(w, h);
     this.controls.handleResize();
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -463,6 +534,8 @@ export class ScanViewer {
     this.resizeObserver?.disconnect();
     this.clearParts();
     this.setMarkers([]);
+    this.setLines([]);
+    this.setToothLabels([]);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -492,9 +565,17 @@ function tameMaterial(m: THREE.Material): THREE.Material {
   return m;
 }
 
+function clearGroup(group: THREE.Group): void {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    disposeObject(child);
+  }
+}
+
 function disposeObject(root: THREE.Object3D): void {
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
+    // Fat lines are meshes too (LineSegments2 extends Mesh)
     if (!mesh.isMesh) return;
     mesh.geometry?.dispose();
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];

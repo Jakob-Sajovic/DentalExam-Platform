@@ -11,7 +11,15 @@ import {
   SCAN_KINDS,
   SCAN_KIND_LABELS,
   SCAN_UNIT_TO_MM,
-  LANDMARK_SETS,
+  activeSet,
+  viewsFor,
+  measurementSegments,
+  DentitionStage,
+  DENTITION_STAGES,
+  DENTITION_STAGE_LABELS,
+  CleftType,
+  CLEFT_TYPES,
+  CLEFT_LABELS,
   MESH_EXTENSIONS,
   Vec3,
   computeMeasurements,
@@ -28,9 +36,13 @@ import {
   partRole,
   partInView,
   landmarksInView,
+  measurementColor,
+  toothRowsInView,
 } from "../model/scans3d";
 import { ScanFileStore } from "../storage/scan-file-store";
-import type { ScanViewer, ViewerPartInput, ViewAxis, CameraState, RotateAxis } from "../scan3d/viewer";
+import { FdiToothNumber } from "../model/types";
+import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import type { ScanViewer, ViewerPartInput, ViewAxis, CameraState, RotateAxis, ViewerLine } from "../scan3d/viewer";
 
 function esc(str: string): string {
   const div = document.createElement("div");
@@ -48,6 +60,8 @@ const ROTATE_HOLD_EVERY_MS = 40;
 const ROTATE_HOLD_DEGREES = 2;
 
 type StatusKind = "info" | "ok" | "warn" | "error";
+/** What a tap on the model places: a measurement landmark or a tooth number. */
+type PlaceMode = "landmarks" | "teeth";
 
 async function sha256Hex(blob: Blob): Promise<string> {
   if (!crypto || !crypto.subtle) throw new Error("Brskalnik ne omogoča preverjanja datotek (potrebna je varna povezava https).");
@@ -102,6 +116,11 @@ export class Scans3DTabController implements TabController {
   private viewByKind: Record<ScanKind, ScanView> = { head: "head", intraoral: "upper" };
   /** Landmark that the next tap on the model places. */
   private activeLandmark: string | null = null;
+  private placeMode: PlaceMode = "landmarks";
+  /** Tooth number that the next tap places, in tooth mode. */
+  private activeTooth: string | null = null;
+  private showLines = true;
+  private showTeeth = true;
   /** Parts the operator switched on or off in a panel, over the panel's default. */
   private partOverrides = new Map<ScanView, Map<string, boolean>>();
   /** Camera of each panel, keyed by record and panel, so switching back keeps the view. */
@@ -122,6 +141,8 @@ export class Scans3DTabController implements TabController {
   private viewerWrap: HTMLElement | null = null;
   private viewerHost: HTMLElement | null = null;
   private viewerMsg: HTMLElement | null = null;
+  private modeBar: HTMLElement | null = null;
+  private listBar: HTMLElement | null = null;
   private landmarksEl: HTMLElement | null = null;
   private measurementsEl: HTMLElement | null = null;
   private noteEl: HTMLTextAreaElement | null = null;
@@ -137,6 +158,7 @@ export class Scans3DTabController implements TabController {
       <div class="tab-content-inner s3-tab">
         <h2>3D skeni</h2>
         <div class="s3-kind-bar" id="s3-kind-bar"></div>
+        <div class="s3-list-bar" id="s3-list-bar" hidden></div>
         <div class="s3-view-bar" id="s3-view-bar" hidden></div>
         <input type="file" id="s3-file-input" multiple accept="${ACCEPT}" hidden />
         <div class="rtg-status" id="s3-status" hidden></div>
@@ -178,6 +200,7 @@ export class Scans3DTabController implements TabController {
             </label>
           </div>
         </div>
+        <div class="s3-mode-bar" id="s3-mode-bar" hidden></div>
         <div id="s3-landmarks"></div>
         <div id="s3-measurements"></div>
         <div class="form-group">
@@ -192,7 +215,9 @@ export class Scans3DTabController implements TabController {
           Z gumbi pod modelom ga zasukate, nagnete ali zavrtite okoli vseh treh osi
           (pridržite gumb za zvezno vrtenje). Točko postavite tako, da jo izberete na seznamu in
           nato tapnete na model. Intraoralni sken ima tri poglede z ločenimi točkami in
-          meritvami: zgornjo čeljust, spodnjo čeljust in okluzijo.
+          meritvami: zgornjo čeljust, spodnjo čeljust in okluzijo. Na intraoralnem skenu lahko
+          z načinom »Oznake zob« zobe označite s številkami FDI. Meritve so na modelu narisane kot
+          črte, obarvane od modre (prva meritev) do rdeče (zadnja), z isto barvo kot v tabeli.
         </p>
       </div>
     `;
@@ -205,6 +230,8 @@ export class Scans3DTabController implements TabController {
     this.viewerWrap = panel.querySelector("#s3-viewer-wrap") as HTMLElement;
     this.viewerHost = panel.querySelector("#s3-viewer") as HTMLElement;
     this.viewerMsg = panel.querySelector("#s3-viewer-msg") as HTMLElement;
+    this.modeBar = panel.querySelector("#s3-mode-bar") as HTMLElement;
+    this.listBar = panel.querySelector("#s3-list-bar") as HTMLElement;
     this.landmarksEl = panel.querySelector("#s3-landmarks") as HTMLElement;
     this.measurementsEl = panel.querySelector("#s3-measurements") as HTMLElement;
     this.noteEl = panel.querySelector("#s3-note") as HTMLTextAreaElement;
@@ -242,12 +269,27 @@ export class Scans3DTabController implements TabController {
 
   onDeactivate(): void {
     this.activeLandmark = null;
+    this.activeTooth = null;
   }
 
   // ── State helpers ──────────────────────────────────────────────
 
   private record(): ScanRecord {
     return this.session.getScans3D()[this.kind];
+  }
+
+  /** The landmark list the current record is measured with. */
+  private set() {
+    return activeSet(this.kind, this.record());
+  }
+
+  /** Keep the shown panel one of the record's panels (an infant has only the upper jaw). */
+  private ensureView(): void {
+    const views = viewsFor(this.kind, this.record());
+    if (!views.includes(this.view)) {
+      this.view = views[0] || SCAN_VIEWS[this.kind][0];
+      this.viewByKind[this.kind] = this.view;
+    }
   }
 
   private recordKey(): string {
@@ -264,14 +306,19 @@ export class Scans3DTabController implements TabController {
       this.setStatus("info", NO_SESSION);
       if (this.filesEl) this.filesEl.innerHTML = "";
       if (this.viewerWrap) this.viewerWrap.hidden = true;
+      if (this.modeBar) this.modeBar.hidden = true;
+      if (this.listBar) this.listBar.hidden = true;
       if (this.landmarksEl) this.landmarksEl.innerHTML = "";
       if (this.measurementsEl) this.measurementsEl.innerHTML = "";
       if (this.noteEl) this.noteEl.value = "";
       return;
     }
+    this.ensureView();
     this.renderKindBar();
+    this.renderListBar();
     this.renderViewBar();
     this.renderFiles();
+    this.renderModeBar();
     this.renderLandmarks();
     this.renderMeasurements();
     if (this.noteEl) this.noteEl.value = this.record().note;
@@ -294,6 +341,7 @@ export class Scans3DTabController implements TabController {
         this.kind = k;
         this.view = this.viewByKind[k];
         this.activeLandmark = null;
+        this.activeTooth = null;
         this.setStatus(null);
         this.render();
         void this.ensureViewer();
@@ -301,15 +349,58 @@ export class Scans3DTabController implements TabController {
     });
   }
 
+  /** Intraoral: dentition and cleft, which choose the landmark list. */
+  private renderListBar(): void {
+    if (!this.listBar) return;
+    this.listBar.hidden = this.kind !== "intraoral";
+    if (this.listBar.hidden) return;
+    const r = this.record();
+    const opts = <T extends string>(values: T[], labels: Record<T, string>, current: T) =>
+      values.map((v) => `<option value="${v}" ${v === current ? "selected" : ""}>${esc(labels[v])}</option>`).join("");
+    this.listBar.innerHTML = `
+      <label class="s3-list-field"><span class="form-label">Zobovje</span>
+        <select class="form-input" id="s3-stage">${opts(DENTITION_STAGES, DENTITION_STAGE_LABELS, r.stage)}</select></label>
+      <label class="s3-list-field"><span class="form-label">Razcep</span>
+        <select class="form-input" id="s3-cleft">${opts(CLEFT_TYPES, CLEFT_LABELS, r.cleft)}</select></label>`;
+    const onChange = () => {
+      const stage = (this.listBar?.querySelector("#s3-stage") as HTMLSelectElement).value as DentitionStage;
+      const cleft = (this.listBar?.querySelector("#s3-cleft") as HTMLSelectElement).value as CleftType;
+      this.changeList(stage, cleft);
+    };
+    this.listBar.querySelector("#s3-stage")?.addEventListener("change", onChange);
+    this.listBar.querySelector("#s3-cleft")?.addEventListener("change", onChange);
+  }
+
+  /**
+   * Switch the landmark list. Points stay in the record: those the new list
+   * shares keep their place, the others come back if the list is switched back.
+   */
+  private changeList(stage: DentitionStage, cleft: CleftType): void {
+    if (!this.session.hasSession()) return;
+    const r = this.record();
+    this.saveCamera();
+    r.stage = stage;
+    r.cleft = cleft;
+    r.landmarkSet = landmarkSetTag(this.set());
+    this.session.touch();
+    this.ensureView();
+    if (stage === "infant") this.placeMode = "landmarks";
+    this.activeLandmark = landmarksInView(this.set(), this.view).find((l) => !r.landmarks[l.id])?.id || null;
+    this.activeTooth = this.nextTooth(null);
+    this.setStatus(null);
+    this.render();
+    this.applyView();
+  }
+
   private renderViewBar(): void {
     if (!this.viewBar) return;
-    const views = SCAN_VIEWS[this.kind];
     const r = this.record();
+    const views = viewsFor(this.kind, r);
     this.viewBar.hidden = views.length < 2 || r.parts.length === 0;
     if (this.viewBar.hidden) return;
     this.viewBar.innerHTML = views
       .map((v) => {
-        const list = landmarksInView(this.kind, v);
+        const list = landmarksInView(this.set(), v);
         const placed = list.filter((l) => r.landmarks[l.id]).length;
         return `<button class="s3-view-btn${v === this.view ? " active" : ""}" data-panel="${v}">
           ${esc(SCAN_VIEW_LABELS[v])} <span class="s3-count">${placed}/${list.length}</span></button>`;
@@ -326,7 +417,8 @@ export class Scans3DTabController implements TabController {
     this.view = v;
     this.viewByKind[this.kind] = v;
     const r = this.record();
-    this.activeLandmark = landmarksInView(this.kind, v).find((l) => !r.landmarks[l.id])?.id || null;
+    this.activeLandmark = landmarksInView(this.set(), v).find((l) => !r.landmarks[l.id])?.id || null;
+    this.activeTooth = this.nextTooth(null);
     this.setStatus(null);
     this.renderViewBar();
     this.renderFiles();
@@ -476,10 +568,12 @@ export class Scans3DTabController implements TabController {
     const removeBtn = this.filesEl.querySelector("#s3-remove-btn") as HTMLButtonElement | null;
     if (removeBtn) {
       this.twoClick(removeBtn, "Odstrani sken", () => {
-        this.session.getScans3D()[this.kind] = makeEmptyScanRecord(this.kind);
+        // The dentition and cleft describe the patient, not the files: keep them
+        this.session.getScans3D()[this.kind] = makeEmptyScanRecord(this.kind, r.stage, r.cleft);
         this.session.touch();
         this.missing = [];
         this.activeLandmark = null;
+        this.activeTooth = null;
         this.partOverrides.clear();
         this.setStatus("info", "Sken in njegove točke so odstranjeni s pregleda.");
         this.render();
@@ -488,12 +582,192 @@ export class Scans3DTabController implements TabController {
     }
   }
 
+  /** Tooth mode exists only where there are teeth to label. */
+  private toothMode(): boolean {
+    return this.placeMode === "teeth" && toothRowsInView(this.view, this.record().stage).length > 0;
+  }
+
+  private renderModeBar(): void {
+    if (!this.modeBar) return;
+    const r = this.record();
+    this.modeBar.hidden = this.kind !== "intraoral" || r.parts.length === 0 || r.stage === "infant";
+    if (this.modeBar.hidden) return;
+    const teeth = this.toothMode();
+    this.modeBar.innerHTML = `
+      <span class="s3-mode-label">Tap na model postavi:</span>
+      <div class="s3-mode-seg">
+        <button class="s3-mode-btn${teeth ? "" : " active"}" data-mode="landmarks">Točke</button>
+        <button class="s3-mode-btn${teeth ? " active" : ""}" data-mode="teeth">Oznake zob</button>
+      </div>
+      <label class="s3-check"><input type="checkbox" id="s3-show-teeth" ${this.showTeeth ? "checked" : ""}/> prikaži oznake zob</label>`;
+    this.modeBar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode as PlaceMode;
+        if (mode === this.placeMode) return;
+        this.placeMode = mode;
+        if (mode === "teeth") {
+          this.showTeeth = true;
+          if (!this.activeTooth) this.activeTooth = this.nextTooth(null);
+        }
+        this.setStatus(null);
+        this.renderModeBar();
+        this.renderLandmarks();
+        this.syncMarkers();
+      });
+    });
+    this.modeBar.querySelector("#s3-show-teeth")?.addEventListener("change", (e) => {
+      this.showTeeth = (e.target as HTMLInputElement).checked;
+      this.syncMarkers();
+    });
+  }
+
+  /**
+   * A tooth's state in the rest of the examination (VPI/GBI, ICDAS, probing).
+   * Only permanent teeth are charted there; primary teeth are always "free".
+   */
+  private toothState(fdi: string): "present" | "missing" | "implant" | "other" | "free" {
+    const t = Number(fdi) as FdiToothNumber;
+    if (t > 48) return "free";
+    const s = this.session.getSession();
+    const td = s.icdas[t];
+    if (isImplantTooth(td)) return "implant";
+    if (!isToothMissing(s, t)) return "present";
+    // Plain missing (no code, 97, 98) can be undone by labelling; the other
+    // codes (bridge pontic, unerupted, retained root …) describe something else
+    const code = td && td.status === "special" ? td.specialCode : null;
+    return code === null || code === "97" || code === "98" ? "missing" : "other";
+  }
+
+  /** The tooth after `from` (or the first) in the panel's rows that has no label and is not missing. */
+  private nextTooth(from: string | null): string | null {
+    const r = this.record();
+    const rows = toothRowsInView(this.view, r.stage);
+    const order = rows.flatMap((row) => row.teeth);
+    const i = from ? order.indexOf(from) : -1;
+    // Stay within the row being labelled: permanent and primary teeth are not mixed
+    const row = from ? rows.find((x) => x.teeth.includes(from)) : null;
+    const rest = row ? row.teeth.slice(row.teeth.indexOf(from as string) + 1) : order.slice(i + 1);
+    return rest.find((t) => !r.teeth[t] && this.toothState(t) !== "missing") || null;
+  }
+
+  private renderTeeth(): void {
+    if (!this.landmarksEl) return;
+    const r = this.record();
+    const rows = toothRowsInView(this.view, r.stage);
+    const all = rows.flatMap((row) => row.teeth);
+    const placed = all.filter((t) => r.teeth[t]).length;
+    const active = this.activeTooth;
+    const STATE_TITLE = {
+      present: "",
+      free: "",
+      missing: " — manjka",
+      implant: " — vsadek",
+      other: " — posebna koda ICDAS",
+    };
+
+    const rowHtml = rows
+      .map((row) => {
+        const half = row.teeth.length / 2;
+        const btn = (t: string) => {
+          const state = this.toothState(t);
+          const cls = `s3-tooth${r.teeth[t] ? " placed" : ""}${t === active ? " active" : ""}${state === "missing" ? " missing" : ""}${state === "implant" ? " implant" : ""}`;
+          return `<button class="${cls}" data-tooth="${t}" title="Zob ${t}${STATE_TITLE[state]}">${t}</button>`;
+        };
+        return `
+          <div class="s3-tooth-row">
+            <span class="s3-tooth-row-label">${esc(row.label)}</span>
+            <div class="s3-tooth-half">${row.teeth.slice(0, half).map(btn).join("")}</div>
+            <div class="s3-tooth-half">${row.teeth.slice(half).map(btn).join("")}</div>
+          </div>`;
+      })
+      .join("");
+
+    const state = active ? this.toothState(active) : "free";
+    const hint = !active
+      ? "Izberite številko zoba, nato tapnite na zob na modelu."
+      : state === "missing"
+        ? `Zob ${active} je označen kot manjkajoč. Če ga tapnete na modelu, bo označen kot prisoten na vseh zavihkih.`
+        : r.teeth[active]
+          ? `Zob ${active} je označen — tapnite na model, da oznako premaknete.`
+          : `Tapnite na zob ${active} na modelu.`;
+    const actions: string[] = [];
+    if (active && r.teeth[active]) {
+      actions.push(`<button class="btn btn-secondary btn-sm" id="s3-del-tooth">Odstrani oznako ${active}</button>`);
+    }
+    if (active && state === "present") {
+      actions.push(`<button class="btn btn-secondary btn-sm" id="s3-tooth-missing">✕ Zob ${active} manjka</button>`);
+    }
+    if (active && state === "missing") {
+      actions.push(`<button class="btn btn-secondary btn-sm" id="s3-tooth-present">Zob ${active} je prisoten</button>`);
+    }
+    if (active && (state === "implant" || state === "other")) {
+      actions.push(`<span class="form-hint">Stanje zoba ${active} urejate na zavihku ICDAS.</span>`);
+    }
+
+    this.landmarksEl.innerHTML = `
+      <div class="s3-section-head">
+        <h3>Oznake zob${viewsFor(this.kind, r).length > 1 ? ` — ${esc(SCAN_VIEW_LABELS[this.view].toLowerCase())}` : ""}
+          <span class="s3-count">${placed} označenih</span></h3>
+        ${placed ? `<button class="btn btn-danger-outline btn-sm" id="s3-clear-teeth">Izbriši oznake zob</button>` : ""}
+      </div>
+      <p class="form-hint s3-tooth-hint">${esc(hint)} ${actions.join(" ")}</p>
+      <div class="s3-tooth-grid">${rowHtml}</div>
+      <p class="form-hint">Prečrtani zobje so na drugih zavihkih označeni kot manjkajoči. Stalni zobje so povezani
+        z zavihki VPI/GBI, ICDAS in Globine; mlečni niso.</p>`;
+
+    this.landmarksEl.querySelectorAll<HTMLButtonElement>("[data-tooth]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const t = btn.dataset.tooth as string;
+        this.activeTooth = this.activeTooth === t ? null : t;
+        this.renderTeeth();
+        this.syncMarkers();
+      });
+    });
+    this.landmarksEl.querySelector("#s3-del-tooth")?.addEventListener("click", () => {
+      if (!active) return;
+      delete r.teeth[active];
+      this.session.touch();
+      this.renderTeeth();
+      this.syncMarkers();
+    });
+    this.landmarksEl.querySelector("#s3-tooth-missing")?.addEventListener("click", () => {
+      if (!active) return;
+      // Clears the tooth on every tab and removes its label (SessionState.setToothPresence)
+      this.session.setToothPresence(Number(active) as FdiToothNumber, false);
+      this.setStatus("info", `Zob ${active} je označen kot manjkajoč na vseh zavihkih.`);
+      this.activeTooth = this.nextTooth(active);
+      this.renderTeeth();
+      this.syncMarkers();
+    });
+    this.landmarksEl.querySelector("#s3-tooth-present")?.addEventListener("click", () => {
+      if (!active) return;
+      this.session.setToothPresence(Number(active) as FdiToothNumber, true);
+      this.setStatus("info", `Zob ${active} je označen kot prisoten na vseh zavihkih.`);
+      this.renderTeeth();
+    });
+    const clearBtn = this.landmarksEl.querySelector("#s3-clear-teeth") as HTMLButtonElement | null;
+    if (clearBtn) {
+      this.twoClick(clearBtn, "Izbriši oznake zob", () => {
+        // Only the teeth offered in this panel; in the occlusion panel that is all of them
+        for (const t of all) delete r.teeth[t];
+        this.activeTooth = this.nextTooth(null);
+        this.session.touch();
+        this.renderTeeth();
+        this.syncMarkers();
+      });
+    }
+  }
+
   private renderLandmarks(): void {
     if (!this.landmarksEl) return;
     const r = this.record();
-    const set = LANDMARK_SETS[this.kind];
+    const set = this.set();
     if (r.parts.length === 0) {
       this.landmarksEl.innerHTML = "";
+      return;
+    }
+    if (this.toothMode()) {
+      this.renderTeeth();
       return;
     }
 
@@ -505,7 +779,7 @@ export class Scans3DTabController implements TabController {
       notices.push(`<div class="rtg-status rtg-status-warn">Točke so bile postavljene s seznamom ${esc(r.landmarkSet)}, trenutni seznam je ${esc(landmarkSetTag(set))}.</div>`);
     }
 
-    const list = landmarksInView(this.kind, this.view);
+    const list = landmarksInView(this.set(), this.view);
     const placed = list.filter((l) => r.landmarks[l.id]).length;
     const rows = list
       .map((l) => {
@@ -524,7 +798,7 @@ export class Scans3DTabController implements TabController {
     this.landmarksEl.innerHTML = `
       ${notices.join("")}
       <div class="s3-section-head">
-        <h3>Točke${SCAN_VIEWS[this.kind].length > 1 ? ` — ${esc(SCAN_VIEW_LABELS[this.view].toLowerCase())}` : ""}
+        <h3>Točke${viewsFor(this.kind, r).length > 1 ? ` — ${esc(SCAN_VIEW_LABELS[this.view].toLowerCase())}` : ""}
           <span class="s3-count">${placed}/${list.length}</span></h3>
         ${placed ? `<button class="btn btn-danger-outline btn-sm" id="s3-clear-lm">Izbriši točke</button>` : ""}
       </div>
@@ -571,20 +845,26 @@ export class Scans3DTabController implements TabController {
       this.measurementsEl.innerHTML = "";
       return;
     }
-    const rows = computeMeasurements(this.kind, r)
-      .filter((m) => m.def.view === this.view)
+    const inView = computeMeasurements(this.kind, r).filter((m) => m.def.view === this.view);
+    const rows = inView
       .map(
-        (m) => `
+        (m, i) => `
         <tr>
-          <td>${esc(m.def.label)}</td>
+          <td><span class="s3-swatch" style="background:${measurementColor(i, inView.length)}"></span>${esc(m.def.label)}</td>
           <td class="s3-m-val">${m.value === null ? "—" : `${m.value.toFixed(1)} ${m.unit}`}</td>
         </tr>`
       )
       .join("");
     const unitNote = r.unitConfirmed ? "" : ` <span class="s3-unit-warn">(enota ni preverjena)</span>`;
     this.measurementsEl.innerHTML = `
-      <div class="s3-section-head"><h3>Meritve${unitNote}</h3></div>
+      <div class="s3-section-head"><h3>Meritve${unitNote}</h3>
+        <label class="s3-check"><input type="checkbox" id="s3-show-lines" ${this.showLines ? "checked" : ""}/> črte na modelu</label>
+      </div>
       <table class="s3-m-table"><tbody>${rows}</tbody></table>`;
+    this.measurementsEl.querySelector("#s3-show-lines")?.addEventListener("change", (e) => {
+      this.showLines = (e.target as HTMLInputElement).checked;
+      this.syncMarkers();
+    });
   }
 
   private setStatus(kind: StatusKind | null, text = ""): void {
@@ -684,25 +964,54 @@ export class Scans3DTabController implements TabController {
   private syncMarkers(): void {
     if (!this.viewer || !this.session.hasSession()) return;
     const r = this.record();
+    const teethMode = this.toothMode();
     this.viewer.setMarkers(
-      landmarksInView(this.kind, this.view)
+      landmarksInView(this.set(), this.view)
         .filter((l) => r.landmarks[l.id])
-        .map((l) => ({ id: l.id, abbr: l.abbr, position: r.landmarks[l.id], active: l.id === this.activeLandmark }))
+        .map((l) => ({
+          id: l.id,
+          abbr: l.abbr,
+          position: r.landmarks[l.id],
+          active: !teethMode && l.id === this.activeLandmark,
+        }))
+    );
+
+    // One line per measurement whose points are all placed, coloured by its
+    // place in the panel's list so the colour matches the table's swatch
+    const defs = this.set().measurements.filter((m) => m.view === this.view);
+    const lines: ViewerLine[] = [];
+    if (this.showLines) {
+      defs.forEach((def, i) => {
+        const segments = measurementSegments(def, r.landmarks);
+        if (segments) lines.push({ segments, color: measurementColor(i, defs.length) });
+      });
+    }
+    this.viewer.setLines(lines);
+
+    const teeth = this.showTeeth ? toothRowsInView(this.view, this.record().stage).flatMap((row) => row.teeth) : [];
+    this.viewer.setToothLabels(
+      teeth
+        .filter((t) => r.teeth[t])
+        .map((t) => ({ id: t, text: t, position: r.teeth[t], active: teethMode && t === this.activeTooth }))
     );
   }
 
   /** A tap on the model: place the selected landmark, then move on to the next empty one. */
   private placeActive(point: Vec3): void {
+    if (this.session.hasSession() && this.toothMode()) {
+      this.placeTooth(point);
+      return;
+    }
     if (!this.activeLandmark || !this.session.hasSession()) {
       this.setStatus("info", "Najprej na seznamu izberite točko, ki jo želite postaviti.");
       return;
     }
     const r = this.record();
     r.landmarks[this.activeLandmark] = roundCoord(point);
-    r.landmarkSet = landmarkSetTag(LANDMARK_SETS[this.kind]);
+    r.landmarkSet = landmarkSetTag(this.set());
     this.session.touch();
 
-    const list = landmarksInView(this.kind, this.view);
+    const list = landmarksInView(this.set(), this.view);
     const from = list.findIndex((l) => l.id === this.activeLandmark);
     const next = [...list.slice(from + 1), ...list.slice(0, from)].find((l) => !r.landmarks[l.id]);
     this.activeLandmark = next ? next.id : null;
@@ -713,6 +1022,31 @@ export class Scans3DTabController implements TabController {
     this.renderMeasurements();
     this.syncMarkers();
     this.landmarksEl?.querySelector(".s3-lm.active")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /** A tap in tooth mode: label the selected tooth, then move on along its row. */
+  private placeTooth(point: Vec3): void {
+    if (!this.activeTooth) {
+      this.setStatus("info", "Najprej izberite številko zoba.");
+      return;
+    }
+    const r = this.record();
+    const fdi = this.activeTooth;
+    const state = this.toothState(fdi);
+    let note: string | null = null;
+    if (state === "missing") {
+      // A tooth on the scan is there: undo "missing" on every tab
+      this.session.setToothPresence(Number(fdi) as FdiToothNumber, true);
+      note = `Zob ${fdi} je bil označen kot manjkajoč — zdaj je označen kot prisoten na vseh zavihkih.`;
+    } else if (state === "other") {
+      note = `Zob ${fdi} ima na zavihku ICDAS posebno kodo — preverite, ali drži.`;
+    }
+    r.teeth[fdi] = roundCoord(point);
+    this.session.touch();
+    this.activeTooth = this.nextTooth(fdi);
+    this.setStatus(note ? "info" : null, note || "");
+    this.renderTeeth();
+    this.syncMarkers();
   }
 
   // ── Files ──────────────────────────────────────────────────────
@@ -781,12 +1115,13 @@ export class Scans3DTabController implements TabController {
     const stored = await this.keep(hashed.filter((h) => used.has(h.ref.sha256)));
     if (!stored) notes.push("Datotek ni bilo mogoče shraniti v napravo (premalo prostora) — ob naslednjem odprtju jih boste morali izbrati znova.");
 
-    const r = makeEmptyScanRecord(this.kind);
+    const prev = this.record();
+    const r = makeEmptyScanRecord(this.kind, prev.stage, prev.cleft);
     r.parts = parts;
     this.session.getScans3D()[this.kind] = r;
     this.session.touch();
     this.partOverrides.clear();
-    this.activeLandmark = landmarksInView(this.kind, this.view)[0]?.id || null;
+    this.activeLandmark = landmarksInView(this.set(), this.view)[0]?.id || null;
 
     this.setStatus(notes.length ? "warn" : "ok", notes.length ? notes.join(" ") : "Sken je naložen. Preverite enoto in začnite postavljati točke.");
   }

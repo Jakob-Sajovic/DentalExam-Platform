@@ -163,6 +163,7 @@ export const TABS: TabDefinition[] = [
   { id: "patient", label: "Preiskovanec", icon: "👤" },
   { id: "plaque-bleeding", label: "VPI/GBI", icon: "🦷" },
   { id: "icdas", label: "ICDAS", icon: "🔍" },
+  { id: "fillings", label: "Zalivke", icon: "⬜" },
   { id: "probing", label: "Globine", icon: "📏" },
   { id: "radiographs", label: "RTG", icon: "🩻" },
   { id: "scans3d", label: "3D", icon: "📐", pwaOnly: true },

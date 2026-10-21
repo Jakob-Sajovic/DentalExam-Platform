@@ -7,6 +7,7 @@ import { LandingTabController } from "../tabs/tab-landing";
 import { PatientTabController } from "../tabs/tab-patient";
 import { PlaqueBleedingTabController } from "../tabs/tab-plaque-bleeding";
 import { ICDASTabController } from "../tabs/tab-icdas";
+import { FillingsTabController } from "../tabs/tab-fillings";
 import { ProbingTabController } from "../tabs/tab-probing";
 import { RadiographsTabController } from "../tabs/tab-radiographs";
 import { NotesTabController } from "../tabs/tab-notes";
@@ -44,6 +45,7 @@ function initApp() {
   tabManager.registerController("patient", patientCtrl);
   tabManager.registerController("plaque-bleeding", plaqueBleedingCtrl);
   tabManager.registerController("icdas", icdasCtrl);
+  tabManager.registerController("fillings", new FillingsTabController(session));
   tabManager.registerController("probing", probingCtrl);
   tabManager.registerController("radiographs", radiographsCtrl);
   tabManager.registerController("notes", notesCtrl);
