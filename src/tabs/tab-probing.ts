@@ -510,7 +510,7 @@ export class ProbingTabController implements TabController {
     const cm2 = (mm2: number) => (mm2 / 100).toFixed(2).replace(".", ",");
     const basis =
       w.basis === "mean"
-        ? `Spol ni izpolnjen (zavihek FDI) — uporabljeno povprečje obeh spolov.`
+        ? `Spol ni izpolnjen (zavihek Preiskovanec) — uporabljeno povprečje obeh spolov.`
         : `Obseg zobnega vratu za ${w.basis === "male" ? "moške" : "ženske"}.`;
     const partial = w.sitesMeasured < w.sitesPossible ? ` Izmerjenih ${w.sitesMeasured} od ${w.sitesPossible} mest.` : "";
     el.innerHTML = `

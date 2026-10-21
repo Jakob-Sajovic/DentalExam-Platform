@@ -152,6 +152,7 @@ class DomPdfWriter {
       else if (el.matches(".chart-legend")) this.legend(el);
       else if (el.matches(".notes-content")) this.notes(el);
       else if (el.matches(".rtg-r-mount")) await this.radiographs(el);
+      else if (el.matches(".s3-r-grid")) await this.snapshots(el);
       else if (el.matches(".rtg-r-meta")) this.paragraph(el);
       else if (el.tagName === "UL") this.list(el);
       else if (el.matches(".additional-notes-box")) this.blankBox();
@@ -465,6 +466,39 @@ class DomPdfWriter {
         if (spans[1]) this.doc.text((spans[1].textContent || "").trim(), this.pw - MARGIN, this.y + 3, { align: "right" });
         this.y += 6;
       }
+    }
+    this.y += 2;
+  }
+
+  /** 3D snapshots: a row of 4:3 pictures on a light frame, each with its caption below. */
+  private async snapshots(grid: HTMLElement): Promise<void> {
+    const gap = 3;
+    const cells = Array.from(grid.querySelectorAll(".s3-r-cell")) as HTMLElement[];
+    const cols = Number(grid.dataset.cols) || 2;
+    const cellW = (this.cw - gap * (cols - 1)) / cols;
+    const frameH = cellW * 0.75;
+    for (let start = 0; start < cells.length; start += cols) {
+      this.ensure(frameH + 6);
+      for (let i = start; i < Math.min(cells.length, start + cols); i++) {
+        const x = MARGIN + (i - start) * (cellW + gap);
+        const img = cells[i].querySelector("img") as HTMLImageElement | null;
+        this.doc.setFillColor(243, 244, 246);
+        this.doc.setDrawColor(204, 204, 204);
+        this.doc.setLineWidth(0.2);
+        this.doc.rect(x, this.y, cellW, frameH, "FD");
+        if (img && img.src.startsWith("data:image")) {
+          try {
+            await img.decode().catch(() => undefined);
+            this.doc.addImage(img.src, "JPEG", x, this.y, cellW, frameH);
+          } catch {
+            /* an undecodable picture leaves the empty frame */
+          }
+        }
+        this.font(7);
+        const label = (cells[i].querySelector(".s3-r-label")?.textContent || "").trim();
+        this.doc.text(label, x + cellW / 2, this.y + frameH + 3.5, { align: "center" });
+      }
+      this.y += frameH + 6;
     }
     this.y += 2;
   }

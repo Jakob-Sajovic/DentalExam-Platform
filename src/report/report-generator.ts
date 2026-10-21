@@ -43,6 +43,13 @@ import {
 } from "../dental/chart-renderer";
 import { buildToothOutlinesSvg, TOOTH_CENTER_PCT, SITE_SPREAD } from "../dental/tooth-outlines";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import {
+  buildDemographicsMeta,
+  buildFillingsSection,
+  buildWoundSection,
+  buildScans3DSection,
+  REPORT_PLATFORM_CSS,
+} from "./report-platform";
 
 /**
  * Generate a print-friendly HTML report and open it in a new window.
@@ -117,6 +124,7 @@ export function buildReportBody(s: ExaminationSession): string {
       <span><strong>Pregled:</strong> ${patient.checkup || 1}. pregled</span>
       <span><strong>Preiskovanec:</strong> ${esc(patientName)}</span>
       ${patient.code ? `<span><strong>Koda:</strong> ${esc(patient.code)}</span>` : ""}
+      ${buildDemographicsMeta(s)}
       <span><strong>Izvajalec:</strong> ${esc(examinerName)}</span>
       <span><strong>ID seje:</strong> ${esc(s.sessionId)}</span>
     </div>
@@ -125,12 +133,15 @@ export function buildReportBody(s: ExaminationSession): string {
   ${buildPBSection("Indeks zobnih oblog — VPI", s.plaque, "#ffd335")}
   ${buildPBSection("Indeks krvavitve dlesni — GBI", s.bleeding, "#ff6b6b")}
   ${buildICDASSection(s)}
+  ${buildFillingsSection(s)}
   ${buildICDASRootCariesSection(s)}
   ${buildProbingSection(s)}
   ${buildBOPSection(s)}
+  ${buildWoundSection(s)}
   ${buildFurcationSection(s)}
   ${buildNotesSection(s)}
   ${buildRadiographSection(s)}
+  ${buildScans3DSection(s)}
   ${buildOhipSection(s)}
   ${buildFdiSection(s)}
 
@@ -1210,6 +1221,7 @@ th { background: #f0f0f0; font-weight: 600; }
 /* The radiograph pages print in landscape: films sit side by side */
 @page rtg-landscape { size: A4 landscape; }
 
+${REPORT_PLATFORM_CSS}
 @media print {
   body { padding: 0; }
   .rtg-landscape { page: rtg-landscape; }

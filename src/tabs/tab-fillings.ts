@@ -2,22 +2,12 @@
 
 import { TabController } from "./tab-manager";
 import { SessionState } from "../model/session";
-import { FdiToothNumber, ICDASSurface, RestorationCode } from "../model/types";
-import { ALL_TEETH, RESTORATION_LABELS } from "../model/constants";
-import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import { FdiToothNumber, RestorationCode } from "../model/types";
+import { RESTORATION_LABELS } from "../model/constants";
+import { RESTORATION_BRUSHES, restorationsBlocked, summarizeRestorations } from "../model/restorations";
 import { buildSurfaceChart } from "./surface-chart";
 
-/** Paintable restoration codes: a short label and a fill for the chart. */
-const BRUSHES: { code: RestorationCode; label: string; color: string }[] = [
-  { code: 3, label: "Kompozit", color: "#b9d9f2" },
-  { code: 4, label: "Amalgam", color: "#8a8886" },
-  { code: 2, label: "Zalitje fisur", color: "#c7e8cf" },
-  { code: 1, label: "Delno zalitje", color: "#e6f4ea" },
-  { code: 8, label: "Začasna", color: "#fbe9a6" },
-  { code: 7, label: "Izpadla / poškodovana", color: "#f4b6b6" },
-  { code: 5, label: "Kovinska prevleka", color: "#c9b37e" },
-  { code: 6, label: "Prevleka / luska", color: "#e8dcc0" },
-];
+const BRUSHES = RESTORATION_BRUSHES;
 const COLOR = new Map<number, string>(BRUSHES.map((b) => [b.code, b.color]));
 
 /**
@@ -92,26 +82,11 @@ export class FillingsTabController implements TabController {
     }
     const s = this.session.getSession();
     const icdas = this.session.getIcdas();
-    const blocked = (t: FdiToothNumber) => isToothMissing(s, t) && !isImplantTooth(icdas[t]);
-
-    // Surfaces per code, and teeth with fissure sealants
-    const perCode = new Map<number, number>();
-    let sealedTeeth = 0;
-    for (const t of ALL_TEETH) {
-      if (blocked(t)) continue;
-      let sealed = false;
-      for (const surf of Object.keys(icdas[t].surfaces) as ICDASSurface[]) {
-        const code = icdas[t].surfaces[surf].restoration;
-        if (code === null || code === 0) continue;
-        perCode.set(code, (perCode.get(code) || 0) + 1);
-        if (code === 1 || code === 2) sealed = true;
-      }
-      if (sealed) sealedTeeth++;
-    }
-    const fillings = (perCode.get(3) || 0) + (perCode.get(4) || 0) + (perCode.get(8) || 0);
-    const parts = BRUSHES.filter((b) => perCode.get(b.code)).map((b) => `${b.label.toLowerCase()} ${perCode.get(b.code)}`);
+    const blocked = (t: FdiToothNumber) => restorationsBlocked(s, t);
+    const sum = summarizeRestorations(s);
+    const parts = BRUSHES.filter((b) => sum.perCode.get(b.code)).map((b) => `${b.label.toLowerCase()} ${sum.perCode.get(b.code)}`);
     count.innerHTML =
-      `<strong>${fillings}</strong> ploskev z zalivko · <strong>${sealedTeeth}</strong> zob z zalitimi fisurami` +
+      `<strong>${sum.fillingSurfaces}</strong> ploskev z zalivko · <strong>${sum.sealedTeeth}</strong> zob z zalitimi fisurami` +
       (parts.length ? `<div class="fc-count-sub">${parts.join(" · ")}</div>` : "");
 
     host.innerHTML = "";

@@ -1709,3 +1709,6 @@ tr.furc-disabled {
 }
 .perio-wound-bar:empty { display: none; }
 .perio-wound-note { margin-top: 3px; font-size: 11px; color: #605e5c; }
+
+/* Patient tab: demographics, two columns when there is room */
+.demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); column-gap: 12px; }

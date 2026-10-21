@@ -38,11 +38,12 @@ import {
   landmarksInView,
   measurementColor,
   toothRowsInView,
+  SNAPSHOT_PLAN,
 } from "../model/scans3d";
 import { ScanFileStore } from "../storage/scan-file-store";
 import { FdiToothNumber } from "../model/types";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
-import type { ScanViewer, ViewerPartInput, ViewAxis, CameraState, RotateAxis, ViewerLine } from "../scan3d/viewer";
+import type { ScanViewer, ViewerPartInput, ViewAxis, CameraState, RotateAxis, ViewerLine, SnapshotSpec } from "../scan3d/viewer";
 
 function esc(str: string): string {
   const div = document.createElement("div");
@@ -58,6 +59,9 @@ const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png"];
 const ROTATE_HOLD_DELAY_MS = 400;
 const ROTATE_HOLD_EVERY_MS = 40;
 const ROTATE_HOLD_DEGREES = 2;
+// Report pictures, 4:3
+const SNAPSHOT_W = 800;
+const SNAPSHOT_H = 600;
 
 type StatusKind = "info" | "ok" | "warn" | "error";
 /** What a tap on the model places: a measurement landmark or a tooth number. */
@@ -199,6 +203,11 @@ export class Scans3DTabController implements TabController {
               </select>
             </label>
           </div>
+          <div class="s3-snap-bar">
+            <button class="btn btn-secondary" id="s3-snap-btn">📷 Posnetki za poročilo</button>
+            <span class="form-hint" id="s3-snap-hint"></span>
+          </div>
+          <div class="s3-snaps" id="s3-snaps"></div>
         </div>
         <div class="s3-mode-bar" id="s3-mode-bar" hidden></div>
         <div id="s3-landmarks"></div>
@@ -249,6 +258,7 @@ export class Scans3DTabController implements TabController {
     });
 
     this.wireRotateButtons(panel);
+    panel.querySelector("#s3-snap-btn")?.addEventListener("click", () => this.takeSnapshots());
 
     panel.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -321,6 +331,7 @@ export class Scans3DTabController implements TabController {
     this.renderModeBar();
     this.renderLandmarks();
     this.renderMeasurements();
+    this.renderSnapshots();
     if (this.noteEl) this.noteEl.value = this.record().note;
     if (this.viewerWrap) this.viewerWrap.hidden = this.record().parts.length === 0;
   }
@@ -428,12 +439,12 @@ export class Scans3DTabController implements TabController {
   }
 
   /** Parts that belong in the current panel, and whether each is switched on. */
-  private partsInView(): { part: ScanPart; role: PartRole; visible: boolean }[] {
-    const over = this.partOverrides.get(this.view);
+  private partsInView(view: ScanView = this.view): { part: ScanPart; role: PartRole; visible: boolean }[] {
+    const over = this.partOverrides.get(view);
     const out: { part: ScanPart; role: PartRole; visible: boolean }[] = [];
     for (const part of this.record().parts) {
       const role = partRole(this.kind, part);
-      const rule = partInView(role, this.view);
+      const rule = partInView(role, view);
       if (!rule.shown) continue;
       const o = over?.get(part.id);
       out.push({ part, role, visible: o === undefined ? rule.visibleByDefault : o });
@@ -836,6 +847,71 @@ export class Scans3DTabController implements TabController {
         this.syncMarkers();
       });
     }
+  }
+
+  // ── Report snapshots ───────────────────────────────────────────
+
+  /** The camera a panel would show: live, remembered, or its preset framing. */
+  private panelCamera(view: ScanView, parts: string[]): CameraState | null {
+    if (!this.viewer) return null;
+    if (view === this.view) return this.viewer.getCameraState();
+    return this.cameras.get(this.cameraKey(view)) || this.viewer.framedState(...VIEW_CAMERA[view], parts);
+  }
+
+  private takeSnapshots(): void {
+    if (!this.viewer || !this.session.hasSession() || this.busy || this.missing.length) {
+      this.setStatus("warn", "Za posnetke morajo biti naložene vse datoteke skena.");
+      return;
+    }
+    const r = this.record();
+    const views = viewsFor(this.kind, r);
+    const specs: SnapshotSpec[] = [];
+    const labels = new Map<string, string>();
+    for (const plan of SNAPSHOT_PLAN[this.kind]) {
+      if (!views.includes(plan.view)) continue;
+      const parts = this.partsInView(plan.view).filter((x) => x.visible).map((x) => x.part.id);
+      const base = parts.length ? this.panelCamera(plan.view, parts) : null;
+      if (!base) continue;
+      specs.push({ id: plan.id, parts, camera: plan.turn ? this.viewer.rotatedState(base, "turn", plan.turn) : base });
+      labels.set(plan.id, plan.label);
+    }
+    if (!specs.length) return;
+    this.saveCamera();
+    const shots = this.viewer.captureSnapshots(specs, SNAPSHOT_W, SNAPSHOT_H);
+    r.snapshots = {};
+    for (const shot of shots) {
+      r.snapshots[shot.id] = { label: labels.get(shot.id) || shot.id, dataUrl: shot.dataUrl, width: SNAPSHOT_W, height: SNAPSHOT_H };
+    }
+    this.session.touch();
+    this.setStatus("ok", `Shranjenih ${shots.length} posnetkov za poročilo.`);
+    this.renderSnapshots();
+  }
+
+  private renderSnapshots(): void {
+    const host = this.panel?.querySelector("#s3-snaps") as HTMLElement | null;
+    const hint = this.panel?.querySelector("#s3-snap-hint") as HTMLElement | null;
+    if (!host || !hint || !this.session.hasSession()) return;
+    const r = this.record();
+    hint.textContent =
+      this.kind === "head"
+        ? "Pred posnetkom obrnite glavo, da jo gledate od spredaj (⟲ = privzeti pogled); stranski in zadnji pogled se izračunajo."
+        : "Uporabijo se trenutni pogledi panelov: čeljusti od zgoraj, griz od spredaj (⟲ = privzeti pogled); stranska pogleda se izračunata.";
+    const shots = SNAPSHOT_PLAN[this.kind].filter((p) => r.snapshots[p.id]?.dataUrl);
+    if (!shots.length) {
+      host.innerHTML = "";
+      return;
+    }
+    host.innerHTML = `
+      ${shots
+        .map((p) => `<figure class="s3-snap"><img src="${r.snapshots[p.id].dataUrl}" alt="${esc(p.label)}" /><figcaption>${esc(p.label)}</figcaption></figure>`)
+        .join("")}
+      <button class="btn btn-danger-outline btn-sm" id="s3-snap-clear">Odstrani posnetke</button>`;
+    const clear = host.querySelector("#s3-snap-clear") as HTMLButtonElement;
+    this.twoClick(clear, "Odstrani posnetke", () => {
+      r.snapshots = {};
+      this.session.touch();
+      this.renderSnapshots();
+    });
   }
 
   private renderMeasurements(): void {

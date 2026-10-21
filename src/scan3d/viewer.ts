@@ -71,6 +71,32 @@ export interface CameraState {
   up: Vec3;
 }
 
+/** One picture for the report: a camera and the parts shown. */
+export interface SnapshotSpec {
+  id: string;
+  camera: CameraState;
+  parts: string[];
+}
+
+/**
+ * The camera after turning the model by `degrees` about a screen axis (see
+ * RotateAxis): the camera moves the opposite way around the target.
+ */
+export function rotateCameraState(state: CameraState, axis: RotateAxis, degrees: number): CameraState {
+  const target = new THREE.Vector3(...state.target);
+  const offset = new THREE.Vector3(...state.position).sub(target);
+  const sight = offset.clone().negate().normalize();
+  const up0 = new THREE.Vector3(...state.up);
+  const up = up0.addScaledVector(sight, -up0.dot(sight)).normalize();
+  const right = new THREE.Vector3().crossVectors(sight, up).normalize();
+  const about = axis === "turn" ? up : axis === "tilt" ? right : sight;
+  const q = new THREE.Quaternion().setFromAxisAngle(about, -THREE.MathUtils.degToRad(degrees));
+  offset.applyQuaternion(q);
+  up.applyQuaternion(q);
+  const p = target.clone().add(offset);
+  return { position: [p.x, p.y, p.z], target: state.target, up: [up.x, up.y, up.z] };
+}
+
 const SURFACE_COLOR = 0xd9d2c5;
 const MARKER_COLOR = 0x1565c0;
 const MARKER_ACTIVE_COLOR = 0xe65100;
@@ -370,22 +396,73 @@ export class ScanViewer {
 
   /** Rotate the model by `degrees` about a screen axis (see RotateAxis). */
   rotateModel(axis: RotateAxis, degrees: number): void {
-    const target = this.controls.target;
-    const offset = this.camera.position.clone().sub(target);
-    const sight = offset.clone().negate().normalize();
-    const up = this.camera.up.clone().addScaledVector(sight, -this.camera.up.dot(sight)).normalize();
-    const right = new THREE.Vector3().crossVectors(sight, up).normalize();
-    const about = axis === "turn" ? up : axis === "tilt" ? right : sight;
-    // Turning the camera the opposite way turns the model the asked way
-    const q = new THREE.Quaternion().setFromAxisAngle(about, -THREE.MathUtils.degToRad(degrees));
-    offset.applyQuaternion(q);
-    up.applyQuaternion(q);
-    this.camera.position.copy(target).add(offset);
-    this.camera.up.copy(up);
-    this.camera.lookAt(target);
+    const next = rotateCameraState(this.getCameraState(), axis, degrees);
+    this.camera.position.set(...next.position);
+    this.camera.up.set(...next.up);
+    this.camera.lookAt(this.controls.target);
     this.lastAxis = null;
     this.controls.update();
     this.requestRender();
+  }
+
+  /** rotateCameraState, for callers that must not import three.js themselves. */
+  rotatedState(state: CameraState, axis: RotateAxis, degrees: number): CameraState {
+    return rotateCameraState(state, axis, degrees);
+  }
+
+  /**
+   * The camera that frames these parts from `direction` with `up` on top,
+   * as the panel presets do — without moving the live camera.
+   */
+  framedState(direction: Vec3, up: Vec3, partIds: string[]): CameraState | null {
+    const box = new THREE.Box3();
+    for (const id of partIds) {
+      const obj = this.parts.get(id);
+      if (obj) box.expandByObject(obj);
+    }
+    if (box.isEmpty()) return null;
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = box.getSize(new THREE.Vector3()).length() / 2;
+    const dist = (radius / Math.sin((this.camera.fov * Math.PI) / 360)) * 0.8;
+    const p = center.clone().addScaledVector(new THREE.Vector3(...direction).normalize(), dist);
+    return { position: [p.x, p.y, p.z], target: [center.x, center.y, center.z], up };
+  }
+
+  /**
+   * Pictures for the report, rendered at a fixed size behind the scenes:
+   * the surface only (no markers, lines or labels). The live view is
+   * restored afterwards.
+   */
+  captureSnapshots(specs: SnapshotSpec[], width = 800, height = 600): { id: string; dataUrl: string }[] {
+    const saved = this.getCameraState();
+    const visible = new Map(Array.from(this.parts.entries()).map(([id, o]) => [id, o.visible]));
+    const overlays = [this.markerGroup, this.lineGroup, this.toothGroup];
+    const pixelRatio = this.renderer.getPixelRatio();
+    const out: { id: string; dataUrl: string }[] = [];
+    try {
+      for (const g of overlays) g.visible = false;
+      this.renderer.setPixelRatio(1);
+      // Leave the canvas's on-page size alone (updateStyle = false)
+      this.renderer.setSize(width, height, false);
+      this.camera.aspect = width / height;
+      for (const spec of specs) {
+        for (const [id, obj] of Array.from(this.parts.entries())) obj.visible = spec.parts.includes(id);
+        this.camera.up.set(...spec.camera.up);
+        this.camera.position.set(...spec.camera.position);
+        const target = new THREE.Vector3(...spec.camera.target);
+        this.camera.lookAt(target);
+        this.fitClipping(this.camera.position.distanceTo(target));
+        this.renderer.render(this.scene, this.camera);
+        out.push({ id: spec.id, dataUrl: this.renderer.domElement.toDataURL("image/jpeg", 0.88) });
+      }
+    } finally {
+      for (const g of overlays) g.visible = true;
+      for (const [id, obj] of Array.from(this.parts.entries())) obj.visible = visible.get(id) ?? true;
+      this.renderer.setPixelRatio(pixelRatio);
+      this.resize();
+      this.setCameraState(saved);
+    }
+    return out;
   }
 
   /** Look along an axis of the file; pressing the same axis again flips to the other side. */

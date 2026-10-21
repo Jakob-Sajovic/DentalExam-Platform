@@ -415,3 +415,12 @@
 /* Tooth grid: state from the other tabs */
 .s3-tooth.missing { color: #a19f9d; background: #f3f2f1; text-decoration: line-through; }
 .s3-tooth.implant { border-style: dashed; }
+
+/* 3D: report snapshots */
+.s3-snap-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.s3-snap-bar .form-hint { flex: 1 1 240px; }
+.s3-snaps { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 8px; }
+.s3-snaps:empty { display: none; }
+.s3-snap { margin: 0; width: 132px; }
+.s3-snap img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid #e1dfdd; border-radius: 3px; background: #f3f4f6; }
+.s3-snap figcaption { font-size: 11px; color: #605e5c; text-align: center; }

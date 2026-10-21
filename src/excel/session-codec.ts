@@ -24,6 +24,7 @@ import {
 import { ALL_TEETH, SCHEMA_VERSION, PROBING_ALL_SITES, ROOT_CARIES_ALL_TEETH, rootCariesEntryCount, LEGACY_RADIOGRAPH_SLOTS } from "../model/constants";
 import { isToothMissing } from "../model/tooth-status";
 import { computePerioWound } from "../model/perio-wound";
+import { normalizeDemographics, effectiveAge, Sex, Settlement, StatRegion } from "../model/demographics";
 import {
   RADIOGRAPH_JAWS,
   normalizeRadiographs,
@@ -44,6 +45,8 @@ import {
 import {
   SCAN_KINDS,
   allLandmarks,
+  Scans3DData,
+  ScanSnapshot,
   allMeasurements,
   activeSet,
   DENTITION_STAGES,
@@ -84,6 +87,8 @@ export function getColumnHeaders(): string[] {
 
   // Patient
   h.push("patient_date", "patient_firstName", "patient_lastName", "patient_code", "patient_checkup");
+  // Demographics; demo_age_years is the age used (from the birth date when given)
+  h.push("demo_sex", "demo_birth_date", "demo_age_years", "demo_residence", "demo_settlement", "demo_region");
 
   // Examiner
   h.push("examiner_firstName", "examiner_lastName");
@@ -185,6 +190,10 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
 
   // Patient
   row.push(s.patient.date, s.patient.firstName, s.patient.lastName, s.patient.code, s.patient.checkup || 1);
+
+  // Demographics
+  const demo = normalizeDemographics(s.demographics);
+  row.push(demo.sex || "", demo.birthDate, effectiveAge(demo, s.patient.date), demo.residence, demo.settlement || "", demo.region || "");
 
   // Examiner
   const examiner = s.examiner || { firstName: "", lastName: "" };
@@ -331,7 +340,15 @@ function buildJsonBackup(s: ExaminationSession): string {
     upper: radio.upper.map((f) => ({ ...f, image: slim(f.image) })),
     lower: radio.lower.map((f) => ({ ...f, image: slim(f.image) })),
   };
-  const copy = { ...s, radiographs: slimRadio };
+  // 3D snapshots go to the image sheet, like the films
+  const scans = normalizeScans3D(s.scans3d);
+  const slimScans = {} as Scans3DData;
+  for (const kind of SCAN_KINDS) {
+    const snaps: Record<string, ScanSnapshot> = {};
+    for (const [id, snap] of Object.entries(scans[kind].snapshots)) snaps[id] = { ...snap, dataUrl: "" };
+    slimScans[kind] = { ...scans[kind], snapshots: snaps };
+  }
+  const copy = { ...s, radiographs: slimRadio, scans3d: slimScans };
   const json = JSON.stringify(copy);
   if (json.length > MAX_CELL_CHARS) {
     // eslint-disable-next-line no-console
@@ -422,6 +439,18 @@ export function radiographsToImageRows(s: ExaminationSession): (string | number)
     });
   }
 
+  // 3D snapshots share the sheet, keyed S3_<kind>_<view>
+  const scans = normalizeScans3D(s.scans3d);
+  for (const kind of SCAN_KINDS) {
+    for (const [id, snap] of Object.entries(scans[kind].snapshots)) {
+      entries.push({
+        key: `${SNAPSHOT_KEY}${kind}_${id}`,
+        img: { dataUrl: snap.dataUrl, fileName: "", width: snap.width, height: snap.height },
+        caption: snap.label,
+      });
+    }
+  }
+
   const rows: (string | number)[][] = [];
   for (const { key, img, caption } of entries) {
     if (!img.dataUrl) continue;
@@ -503,7 +532,25 @@ export function imageRowsToRadiographs(
  * upgrade data saved with the old 10-slot mount. Image records the sheet did
  * not supply are dropped, since without pixels they cannot be shown.
  */
+const SNAPSHOT_KEY = "S3_";
+
+/** 3D snapshots from the image sheet; those without pixels (from _json) are dropped. */
+function restoreScanSnapshots(s: ExaminationSession, stored: StoredRadiographImages): void {
+  s.scans3d = normalizeScans3D(s.scans3d);
+  for (const kind of SCAN_KINDS) {
+    const snaps = s.scans3d[kind].snapshots;
+    for (const id of Object.keys(snaps)) if (!snaps[id].dataUrl) delete snaps[id];
+    const prefix = `${SNAPSHOT_KEY}${kind}_`;
+    for (const key of Object.keys(stored)) {
+      if (!key.startsWith(prefix)) continue;
+      const { image, caption } = stored[key];
+      snaps[key.slice(prefix.length)] = { label: caption, dataUrl: image.dataUrl, width: image.width, height: image.height };
+    }
+  }
+}
+
 export function restoreRadiographs(s: ExaminationSession, stored: StoredRadiographImages): void {
+  restoreScanSnapshots(s, stored);
   const radio = s.radiographs || ({} as RadiographData);
 
   // Old 10-slot mount: merge sheet images into the legacy map, then migrate
@@ -585,6 +632,15 @@ export function rowToSession(
       firstName: str("examiner_firstName"),
       lastName: str("examiner_lastName"),
     },
+    demographics: normalizeDemographics({
+      sex: (str("demo_sex") || null) as Sex | null,
+      birthDate: str("demo_birth_date"),
+      // With a birth date the age is recomputed; without one it was entered by hand
+      ageYears: str("demo_birth_date") ? null : num("demo_age_years"),
+      residence: str("demo_residence"),
+      settlement: (str("demo_settlement") || null) as Settlement | null,
+      region: (str("demo_region") || null) as StatRegion | null,
+    }),
     plaque: {} as ExaminationSession["plaque"],
     bleeding: {} as ExaminationSession["bleeding"],
     icdas: {} as ExaminationSession["icdas"],

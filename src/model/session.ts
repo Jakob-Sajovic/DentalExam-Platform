@@ -29,6 +29,7 @@ import { makeDefaultRadiographs as createDefaultRadiographs, normalizeRadiograph
 import { ALL_TEETH, SCHEMA_VERSION, ROOT_CARIES_ALL_TEETH, PROBING_ALL_SITES, rootCariesEntryCount } from "./constants";
 import { isImplantCode } from "./tooth-status";
 import { Scans3DData, makeDefaultScans3D, normalizeScans3D } from "./scans3d";
+import { DemographicsData, makeDefaultDemographics, normalizeDemographics } from "./demographics";
 
 type ChangeListener = () => void;
 
@@ -198,6 +199,7 @@ function createBlankSession(): ExaminationSession {
     ohipExtra: makeDefaultOhipExtra(),
     fdiQuestionnaire: createDefaultFdiQuestionnaire(),
     scans3d: makeDefaultScans3D(),
+    demographics: makeDefaultDemographics(),
   };
 }
 
@@ -321,13 +323,20 @@ export class SessionState {
     return this.getSession().fdiQuestionnaire;
   }
 
+  getDemographics(): DemographicsData {
+    const s = this.getSession();
+    // Sessions saved before demographics existed
+    if (!s.demographics) s.demographics = normalizeDemographics(null);
+    return s.demographics;
+  }
+
   getScans3D(): Scans3DData {
     const s = this.getSession();
     // Sessions saved before the 3D tab (or its tooth labels) existed lack
     // parts of scans3d. Only replaced when incomplete, so callers may hold on
     // to the records.
     const d = s.scans3d;
-    if (!d || !d.head || !d.intraoral || !d.head.teeth || !d.intraoral.teeth) s.scans3d = normalizeScans3D(d);
+    if (!d || !d.head || !d.intraoral || !d.head.snapshots || !d.intraoral.snapshots) s.scans3d = normalizeScans3D(d);
     return s.scans3d;
   }
 

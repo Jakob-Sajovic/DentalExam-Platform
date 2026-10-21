@@ -65,7 +65,8 @@ export interface PerioWound {
 
 /** Null when nothing has been probed yet. */
 export function computePerioWound(s: ExaminationSession): PerioWound | null {
-  const gender = s.fdiQuestionnaire?.gender;
+  // Demographics first; sessions from before it existed have only the FDI answer
+  const gender = s.demographics?.sex || s.fdiQuestionnaire?.gender;
   const basis: WoundSexBasis = gender === "male" || gender === "female" ? gender : "mean";
   let total = 0;
   let burden = 0;

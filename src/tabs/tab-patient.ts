@@ -1,5 +1,21 @@
 import { TabController } from "./tab-manager";
 import { SessionState } from "../model/session";
+import {
+  SEX_LABELS,
+  SETTLEMENT_LABELS,
+  STAT_REGIONS,
+  Sex,
+  Settlement,
+  StatRegion,
+  ageFromBirthDate,
+  effectiveAge,
+  fdiAgeBand,
+  formatAge,
+} from "../model/demographics";
+
+function options(values: readonly string[], labels?: Record<string, string>): string {
+  return `<option value="">—</option>` + values.map((v) => `<option value="${v}">${labels ? labels[v] : v}</option>`).join("");
+}
 
 export class PatientTabController implements TabController {
   private panel: HTMLElement | null = null;
@@ -51,6 +67,37 @@ export class PatientTabController implements TabController {
           <input type="text" id="patient-code" class="form-input" placeholder="Šifra / koda" autocomplete="off" />
         </div>
         <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;" />
+        <h3 style="font-size: 13px; color: #323130; margin-bottom: 8px;">Demografski podatki</h3>
+        <div class="demo-grid">
+          <div class="form-group">
+            <label class="form-label" for="demo-sex">Spol</label>
+            <select id="demo-sex" class="form-input">${options(Object.keys(SEX_LABELS), SEX_LABELS)}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="demo-birth">Datum rojstva <span class="form-hint">(neobvezno)</span></label>
+            <input type="date" id="demo-birth" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="demo-age">Starost ob pregledu (leta)</label>
+            <input type="number" id="demo-age" class="form-input" min="0" max="120" step="0.1" inputmode="decimal" />
+            <div class="form-hint" id="demo-age-hint"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="demo-residence">Kraj bivanja</label>
+            <input type="text" id="demo-residence" class="form-input" placeholder="Kraj" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="demo-settlement">Okolje bivanja</label>
+            <select id="demo-settlement" class="form-input">${options(Object.keys(SETTLEMENT_LABELS), SETTLEMENT_LABELS)}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="demo-region">Statistična regija</label>
+            <select id="demo-region" class="form-input">${options(STAT_REGIONS)}</select>
+          </div>
+        </div>
+        <p class="form-hint">Spol in starost izpolnita tudi vprašanji 1 in 2 vprašalnika FDI; spol določa tabelo za
+          izračun parodontalne rane.</p>
+        <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;" />
         <h3 style="font-size: 13px; color: #323130; margin-bottom: 8px;">Izvajalec pregleda</h3>
         <div class="form-group">
           <label class="form-label" for="examiner-firstname">Ime izvajalca</label>
@@ -80,6 +127,50 @@ export class PatientTabController implements TabController {
     this.firstNameInput.addEventListener("input", validate);
     this.lastNameInput.addEventListener("input", validate);
     this.codeInput.addEventListener("input", validate);
+
+    for (const id of ["demo-sex", "demo-birth", "demo-age", "demo-residence", "demo-settlement", "demo-region"]) {
+      const el = panel.querySelector(`#${id}`) as HTMLInputElement;
+      el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => this.writeDemographics());
+    }
+    // The exam date changes the age computed from the birth date
+    this.dateInput.addEventListener("change", () => this.writeDemographics());
+  }
+
+  private field<T extends HTMLElement>(id: string): T {
+    return this.panel?.querySelector(`#${id}`) as T;
+  }
+
+  /** Demographics are saved as they are typed, and passed on to the FDI questionnaire. */
+  private writeDemographics(): void {
+    if (!this.session.hasSession()) return;
+    const d = this.session.getDemographics();
+    d.sex = (this.field<HTMLSelectElement>("demo-sex").value || null) as Sex | null;
+    d.birthDate = this.field<HTMLInputElement>("demo-birth").value;
+    const typed = parseFloat(this.field<HTMLInputElement>("demo-age").value.replace(",", "."));
+    d.ageYears = Number.isFinite(typed) ? typed : null;
+    d.residence = this.field<HTMLInputElement>("demo-residence").value.trim();
+    d.settlement = (this.field<HTMLSelectElement>("demo-settlement").value || null) as Settlement | null;
+    d.region = (this.field<HTMLSelectElement>("demo-region").value || null) as StatRegion | null;
+
+    const examDate = this.dateInput?.value || this.session.getPatient().date;
+    const age = effectiveAge(d, examDate);
+    const fdi = this.session.getFdiQuestionnaire();
+    if (d.sex) fdi.gender = d.sex;
+    if (age !== null) fdi.age = fdiAgeBand(age);
+    this.session.touch();
+    this.showAge();
+  }
+
+  /** With a birth date the age is computed and the hand-entered field is locked. */
+  private showAge(): void {
+    const d = this.session.getDemographics();
+    const examDate = this.dateInput?.value || this.session.getPatient().date;
+    const computed = ageFromBirthDate(d.birthDate, examDate);
+    const ageInput = this.field<HTMLInputElement>("demo-age");
+    ageInput.disabled = computed !== null;
+    if (computed !== null) ageInput.value = String(computed);
+    this.field<HTMLElement>("demo-age-hint").textContent =
+      computed !== null ? `Izračunano iz datuma rojstva: ${formatAge(computed)}` : d.ageYears !== null ? formatAge(d.ageYears) : "";
   }
 
   onActivate(): void {
@@ -94,6 +185,15 @@ export class PatientTabController implements TabController {
     if (this.codeInput) this.codeInput.value = patient.code;
     if (this.examinerFirstNameInput) this.examinerFirstNameInput.value = examiner.firstName;
     if (this.examinerLastNameInput) this.examinerLastNameInput.value = examiner.lastName;
+
+    const d = this.session.getDemographics();
+    this.field<HTMLSelectElement>("demo-sex").value = d.sex || "";
+    this.field<HTMLInputElement>("demo-birth").value = d.birthDate;
+    this.field<HTMLInputElement>("demo-age").value = d.ageYears === null ? "" : String(d.ageYears);
+    this.field<HTMLInputElement>("demo-residence").value = d.residence;
+    this.field<HTMLSelectElement>("demo-settlement").value = d.settlement || "";
+    this.field<HTMLSelectElement>("demo-region").value = d.region || "";
+    this.showAge();
 
     this.validateAndShow();
   }

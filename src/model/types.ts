@@ -1,4 +1,5 @@
 import { Scans3DData } from "./scans3d";
+import type { DemographicsData } from "./demographics";
 
 // All FDI tooth numbers (permanent dentition)
 export type FdiToothNumber =
@@ -215,4 +216,5 @@ export interface ExaminationSession {
   ohipExtra: OhipExtraData;
   fdiQuestionnaire: FdiQuestionnaireData;
   scans3d: Scans3DData;
+  demographics: DemographicsData;
 }

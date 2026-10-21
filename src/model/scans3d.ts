@@ -103,8 +103,40 @@ export interface ScanRecord {
   landmarks: Record<string, Vec3>;
   /** Tooth number labels placed on an intraoral scan: FDI number → point. */
   teeth: Record<string, Vec3>;
+  /** Pictures for the report, by SNAPSHOT_PLAN id. Kept out of the _json cell. */
+  snapshots: Record<string, ScanSnapshot>;
   note: string;
 }
+
+export interface ScanSnapshot {
+  label: string;
+  /** JPEG data URL. */
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * The report's views of each scan. Each is the panel's current view turned
+ * about the screen's vertical axis: from the front view, +90° brings the
+ * patient's right side to the camera. Jaw views are the panels' own
+ * (occlusal) views.
+ */
+export const SNAPSHOT_PLAN: Record<ScanKind, { id: string; label: string; view: ScanView; turn: number }[]> = {
+  head: [
+    { id: "right", label: "Desna stran", view: "head", turn: 90 },
+    { id: "front", label: "Spredaj", view: "head", turn: 0 },
+    { id: "left", label: "Leva stran", view: "head", turn: -90 },
+    { id: "back", label: "Zadaj", view: "head", turn: 180 },
+  ],
+  intraoral: [
+    { id: "upper", label: "Zgornja čeljust", view: "upper", turn: 0 },
+    { id: "lower", label: "Spodnja čeljust", view: "lower", turn: 0 },
+    { id: "bite_right", label: "Griz — desno", view: "occlusion", turn: 90 },
+    { id: "bite_front", label: "Griz — spredaj", view: "occlusion", turn: 0 },
+    { id: "bite_left", label: "Griz — levo", view: "occlusion", turn: -90 },
+  ],
+};
 
 export type Scans3DData = Record<ScanKind, ScanRecord>;
 
@@ -537,6 +569,7 @@ export function makeEmptyScanRecord(kind: ScanKind, stage: DentitionStage = "per
     cleft,
     landmarks: {},
     teeth: {},
+    snapshots: {},
     note: "",
   };
 }
@@ -562,6 +595,7 @@ export function normalizeScans3D(data: Partial<Scans3DData> | null | undefined):
       cleft: CLEFT_TYPES.includes(r.cleft as CleftType) ? (r.cleft as CleftType) : "none",
       landmarks: r.landmarks && typeof r.landmarks === "object" ? r.landmarks : {},
       teeth: r.teeth && typeof r.teeth === "object" ? r.teeth : {},
+      snapshots: r.snapshots && typeof r.snapshots === "object" ? r.snapshots : {},
       note: r.note || "",
     };
   }
