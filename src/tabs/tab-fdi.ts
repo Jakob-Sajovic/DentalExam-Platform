@@ -1,7 +1,8 @@
 import { TabController } from "./tab-manager";
 import { SessionState } from "../model/session";
 import { FdiQuestionnaireData, PBSurface, ProbingSite } from "../model/types";
-import { ALL_TEETH, PROBING_ALL_SITES } from "../model/constants";
+import { PROBING_ALL_SITES } from "../model/constants";
+import { sessionTeeth } from "../model/dentition";
 import { isToothMissing } from "../model/tooth-status";
 
 const PB_SURFACES: PBSurface[] = ["mesial", "distal", "buccal", "lingual"];
@@ -243,7 +244,7 @@ export class FdiTabController implements TabController {
   private calcToothLoss(): "no" | "yes" {
     // Same rule as the tooth count: an implant (ICDAS 90/91) is a lost tooth
     const s = this.session.getSession();
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(this.session.getSession())) {
       if (isToothMissing(s, t)) return "yes";
     }
     return "no";
@@ -253,7 +254,7 @@ export class FdiTabController implements TabController {
     const plaque = this.session.getPlaque();
     let total = 0;
     let active = 0;
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(this.session.getSession())) {
       if (!plaque[t].present) continue;
       for (const s of PB_SURFACES) {
         total++;
@@ -270,7 +271,7 @@ export class FdiTabController implements TabController {
     const bleeding = this.session.getBleeding();
     let total = 0;
     let active = 0;
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(this.session.getSession())) {
       if (!bleeding[t].present) continue;
       for (const s of PB_SURFACES) {
         total++;
@@ -289,7 +290,7 @@ export class FdiTabController implements TabController {
     let teethWithGt5 = 0;
     let presentTeeth = 0;
 
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(this.session.getSession())) {
       const td = probing[t];
       if (!td.present) continue;
       presentTeeth++;

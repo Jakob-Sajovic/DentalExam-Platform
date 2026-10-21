@@ -15,8 +15,7 @@ import {
   viewsFor,
   measurementSegments,
   DentitionStage,
-  DENTITION_STAGES,
-  DENTITION_STAGE_LABELS,
+  stageForDentition,
   CleftType,
   CLEFT_TYPES,
   CLEFT_LABELS,
@@ -39,10 +38,13 @@ import {
   measurementColor,
   toothRowsInView,
   SNAPSHOT_PLAN,
+  measurementPoints,
+  overlayStamp,
 } from "../model/scans3d";
 import { ScanFileStore } from "../storage/scan-file-store";
 import { FdiToothNumber } from "../model/types";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import { DENTITION_LABELS, sessionDentition, sessionTeeth } from "../model/dentition";
 import type { ScanViewer, ViewerPartInput, ViewAxis, CameraState, RotateAxis, ViewerLine, SnapshotSpec } from "../scan3d/viewer";
 
 function esc(str: string): string {
@@ -123,8 +125,6 @@ export class Scans3DTabController implements TabController {
   private placeMode: PlaceMode = "landmarks";
   /** Tooth number that the next tap places, in tooth mode. */
   private activeTooth: string | null = null;
-  private showLines = true;
-  private showTeeth = true;
   /** Parts the operator switched on or off in a panel, over the panel's default. */
   private partOverrides = new Map<ScanView, Map<string, boolean>>();
   /** Camera of each panel, keyed by record and panel, so switching back keeps the view. */
@@ -278,6 +278,7 @@ export class Scans3DTabController implements TabController {
   }
 
   onDeactivate(): void {
+    this.refreshSnapshotsIfStale();
     this.activeLandmark = null;
     this.activeTooth = null;
   }
@@ -311,6 +312,17 @@ export class Scans3DTabController implements TabController {
   // ── Rendering ──────────────────────────────────────────────────
 
   private render(): void {
+    if (this.session.hasSession()) {
+      // The intraoral list follows the patient's dentition, which may have changed on the Patient tab
+      const io = this.session.getScans3D().intraoral;
+      const stage = stageForDentition(sessionDentition(this.session.getSession()));
+      if (io.stage !== stage) {
+        io.stage = stage;
+        io.landmarkSet = landmarkSetTag(activeSet("intraoral", io));
+        this.activeLandmark = null;
+        this.activeTooth = null;
+      }
+    }
     if (!this.session.hasSession()) {
       this.renderKindBar();
       this.setStatus("info", NO_SESSION);
@@ -348,6 +360,7 @@ export class Scans3DTabController implements TabController {
       btn.addEventListener("click", () => {
         const k = btn.dataset.kind as ScanKind;
         if (k === this.kind || this.busy) return;
+        this.refreshSnapshotsIfStale();
         this.saveCamera();
         this.kind = k;
         this.view = this.viewByKind[k];
@@ -368,18 +381,16 @@ export class Scans3DTabController implements TabController {
     const r = this.record();
     const opts = <T extends string>(values: T[], labels: Record<T, string>, current: T) =>
       values.map((v) => `<option value="${v}" ${v === current ? "selected" : ""}>${esc(labels[v])}</option>`).join("");
+    // The dentition is the patient's (Patient tab); only the cleft is chosen here
+    const dentition = sessionDentition(this.session.getSession());
     this.listBar.innerHTML = `
-      <label class="s3-list-field"><span class="form-label">Zobovje</span>
-        <select class="form-input" id="s3-stage">${opts(DENTITION_STAGES, DENTITION_STAGE_LABELS, r.stage)}</select></label>
+      <div class="s3-list-field"><span class="form-label">Zobovje</span>
+        <span class="s3-list-value">${esc(DENTITION_LABELS[dentition])} <span class="form-hint">(zavihek Preiskovanec)</span></span></div>
       <label class="s3-list-field"><span class="form-label">Razcep</span>
         <select class="form-input" id="s3-cleft">${opts(CLEFT_TYPES, CLEFT_LABELS, r.cleft)}</select></label>`;
-    const onChange = () => {
-      const stage = (this.listBar?.querySelector("#s3-stage") as HTMLSelectElement).value as DentitionStage;
-      const cleft = (this.listBar?.querySelector("#s3-cleft") as HTMLSelectElement).value as CleftType;
-      this.changeList(stage, cleft);
-    };
-    this.listBar.querySelector("#s3-stage")?.addEventListener("change", onChange);
-    this.listBar.querySelector("#s3-cleft")?.addEventListener("change", onChange);
+    this.listBar.querySelector("#s3-cleft")?.addEventListener("change", (e) => {
+      this.changeList(r.stage, (e.target as HTMLSelectElement).value as CleftType);
+    });
   }
 
   /**
@@ -610,14 +621,14 @@ export class Scans3DTabController implements TabController {
         <button class="s3-mode-btn${teeth ? "" : " active"}" data-mode="landmarks">Točke</button>
         <button class="s3-mode-btn${teeth ? " active" : ""}" data-mode="teeth">Oznake zob</button>
       </div>
-      <label class="s3-check"><input type="checkbox" id="s3-show-teeth" ${this.showTeeth ? "checked" : ""}/> prikaži oznake zob</label>`;
+      <label class="s3-check"><input type="checkbox" id="s3-show-teeth" ${r.display.teeth ? "checked" : ""}/> prikaži oznake zob</label>`;
     this.modeBar.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const mode = btn.dataset.mode as PlaceMode;
         if (mode === this.placeMode) return;
         this.placeMode = mode;
         if (mode === "teeth") {
-          this.showTeeth = true;
+          this.record().display.teeth = true;
           if (!this.activeTooth) this.activeTooth = this.nextTooth(null);
         }
         this.setStatus(null);
@@ -627,19 +638,20 @@ export class Scans3DTabController implements TabController {
       });
     });
     this.modeBar.querySelector("#s3-show-teeth")?.addEventListener("change", (e) => {
-      this.showTeeth = (e.target as HTMLInputElement).checked;
+      this.record().display.teeth = (e.target as HTMLInputElement).checked;
+      this.session.touch();
       this.syncMarkers();
     });
   }
 
   /**
    * A tooth's state in the rest of the examination (VPI/GBI, ICDAS, probing).
-   * Only permanent teeth are charted there; primary teeth are always "free".
+   * Teeth the patient's dentition does not chart are "free".
    */
   private toothState(fdi: string): "present" | "missing" | "implant" | "other" | "free" {
     const t = Number(fdi) as FdiToothNumber;
-    if (t > 48) return "free";
     const s = this.session.getSession();
+    if (!sessionTeeth(s).includes(t)) return "free";
     const td = s.icdas[t];
     if (isImplantTooth(td)) return "implant";
     if (!isToothMissing(s, t)) return "present";
@@ -723,8 +735,8 @@ export class Scans3DTabController implements TabController {
       </div>
       <p class="form-hint s3-tooth-hint">${esc(hint)} ${actions.join(" ")}</p>
       <div class="s3-tooth-grid">${rowHtml}</div>
-      <p class="form-hint">Prečrtani zobje so na drugih zavihkih označeni kot manjkajoči. Stalni zobje so povezani
-        z zavihki VPI/GBI, ICDAS in Globine; mlečni niso.</p>`;
+      <p class="form-hint">Prečrtani zobje so na drugih zavihkih označeni kot manjkajoči. Zobje, ki jih zobovje
+        (zavihek Preiskovanec) prikazuje na kartah, so povezani z zavihki VPI/GBI, ICDAS in Globine.</p>`;
 
     this.landmarksEl.querySelectorAll<HTMLButtonElement>("[data-tooth]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -865,27 +877,67 @@ export class Scans3DTabController implements TabController {
     }
     const r = this.record();
     const views = viewsFor(this.kind, r);
-    const specs: SnapshotSpec[] = [];
-    const labels = new Map<string, string>();
+    const planned: { id: string; label: string; view: ScanView; camera: CameraState; parts: string[] }[] = [];
     for (const plan of SNAPSHOT_PLAN[this.kind]) {
       if (!views.includes(plan.view)) continue;
       const parts = this.partsInView(plan.view).filter((x) => x.visible).map((x) => x.part.id);
       const base = parts.length ? this.panelCamera(plan.view, parts) : null;
       if (!base) continue;
-      specs.push({ id: plan.id, parts, camera: plan.turn ? this.viewer.rotatedState(base, "turn", plan.turn) : base });
-      labels.set(plan.id, plan.label);
+      const camera = plan.turn ? this.viewer.rotatedState(base, "turn", plan.turn) : base;
+      planned.push({ id: plan.id, label: plan.label, view: plan.view, camera, parts });
     }
-    if (!specs.length) return;
+    if (!planned.length) return;
     this.saveCamera();
-    const shots = this.viewer.captureSnapshots(specs, SNAPSHOT_W, SNAPSHOT_H);
     r.snapshots = {};
-    for (const shot of shots) {
-      r.snapshots[shot.id] = { label: labels.get(shot.id) || shot.id, dataUrl: shot.dataUrl, width: SNAPSHOT_W, height: SNAPSHOT_H };
+    for (const p of planned) {
+      r.snapshots[p.id] = { label: p.label, dataUrl: "", width: SNAPSHOT_W, height: SNAPSHOT_H, view: p.view, camera: p.camera, parts: p.parts };
     }
-    this.session.touch();
-    this.setStatus("ok", `Shranjenih ${shots.length} posnetkov za poročilo.`);
+    const n = this.renderSnapshotImages();
+    this.setStatus("ok", `Shranjenih ${n} posnetkov za poročilo.`);
     this.renderSnapshots();
   }
+
+  /**
+   * (Re)render every snapshot of the record from its stored camera, with the
+   * points, lines and labels as they are now. Returns how many were rendered.
+   */
+  private renderSnapshotImages(): number {
+    if (!this.viewer) return 0;
+    const r = this.record();
+    const ids = Object.keys(r.snapshots).filter((id) => r.snapshots[id].camera && r.snapshots[id].view);
+    const specs: SnapshotSpec[] = ids.map((id) => {
+      const snap = r.snapshots[id];
+      return { id, camera: snap.camera as CameraState, parts: snap.parts || [], ...this.overlaysFor(snap.view as ScanView, false) };
+    });
+    if (!specs.length) return 0;
+    const shots = this.viewer.captureSnapshots(specs, SNAPSHOT_W, SNAPSHOT_H);
+    const stamp = overlayStamp(r);
+    for (const shot of shots) {
+      r.snapshots[shot.id].dataUrl = shot.dataUrl;
+      r.snapshots[shot.id].stamp = stamp;
+    }
+    // The capture used the viewer's overlay groups; put the live ones back
+    this.syncMarkers();
+    this.session.touch();
+    return shots.length;
+  }
+
+  /**
+   * Snapshots follow the points: when the points, labels or display switches
+   * changed since they were taken, retake them from the same cameras. Runs on
+   * leaving the tab or the scan, so the report always shows the current state.
+   */
+  private refreshSnapshotsIfStale(): void {
+    if (!this.viewer || !this.session.hasSession() || this.busy || this.missing.length) return;
+    if (this.viewerKey !== this.recordKey()) return;
+    const r = this.record();
+    const snaps = Object.values(r.snapshots);
+    if (!snaps.length) return;
+    const stamp = overlayStamp(r);
+    if (snaps.every((x) => x.stamp === stamp)) return;
+    this.renderSnapshotImages();
+  }
+
 
   private renderSnapshots(): void {
     const host = this.panel?.querySelector("#s3-snaps") as HTMLElement | null;
@@ -901,7 +953,9 @@ export class Scans3DTabController implements TabController {
       host.innerHTML = "";
       return;
     }
+    const stale = shots.some((p) => r.snapshots[p.id].stamp !== overlayStamp(r));
     host.innerHTML = `
+      ${stale ? `<p class="form-hint s3-snap-stale">Točke so se spremenile — posnetki se posodobijo, ko zapustite zavihek 3D (datoteke skena morajo biti naložene).</p>` : ""}
       ${shots
         .map((p) => `<figure class="s3-snap"><img src="${r.snapshots[p.id].dataUrl}" alt="${esc(p.label)}" /><figcaption>${esc(p.label)}</figcaption></figure>`)
         .join("")}
@@ -921,27 +975,50 @@ export class Scans3DTabController implements TabController {
       this.measurementsEl.innerHTML = "";
       return;
     }
+    const set = this.set();
+    const abbr = new Map(set.landmarks.map((l) => [l.id, l.abbr]));
     const inView = computeMeasurements(this.kind, r).filter((m) => m.def.view === this.view);
     const rows = inView
-      .map(
-        (m, i) => `
+      .map((m, i) => {
+        // Say what is still missing, frame points included
+        const missing = m.value === null ? measurementPoints(m.def).filter((id) => !r.landmarks[id]) : [];
+        const value =
+          m.value !== null
+            ? `${m.value.toFixed(1)} ${m.unit}`
+            : missing.length
+              ? `<span class="s3-m-missing">manjka: ${missing.map((id) => esc(abbr.get(id) || id)).join(", ")}</span>`
+              : "—";
+        return `
         <tr>
           <td><span class="s3-swatch" style="background:${measurementColor(i, inView.length)}"></span>${esc(m.def.label)}</td>
-          <td class="s3-m-val">${m.value === null ? "—" : `${m.value.toFixed(1)} ${m.unit}`}</td>
-        </tr>`
-      )
+          <td class="s3-m-val">${value}</td>
+        </tr>`;
+      })
       .join("");
+    const usesFrame = inView.some((m) => m.def.kind === "component");
+    const frameNote = usesFrame
+      ? `<p class="form-hint">Meritve griza so razdalje vzdolž okluzalne ravnine. To določijo meziobukalni grbici prvih
+          molarjev (pri mlečnem zobovju drugih mlečnih) in zgornja središčnica — te tri točke postavite najprej.</p>`
+      : "";
     const unitNote = r.unitConfirmed ? "" : ` <span class="s3-unit-warn">(enota ni preverjena)</span>`;
     this.measurementsEl.innerHTML = `
       <div class="s3-section-head"><h3>Meritve${unitNote}</h3>
-        <label class="s3-check"><input type="checkbox" id="s3-show-lines" ${this.showLines ? "checked" : ""}/> črte na modelu</label>
+        <span class="s3-checks">
+          <label class="s3-check"><input type="checkbox" id="s3-show-points" ${r.display.points ? "checked" : ""}/> točke</label>
+          <label class="s3-check"><input type="checkbox" id="s3-show-lines" ${r.display.lines ? "checked" : ""}/> črte</label>
+        </span>
       </div>
+      ${frameNote}
       <table class="s3-m-table"><tbody>${rows}</tbody></table>`;
-    this.measurementsEl.querySelector("#s3-show-lines")?.addEventListener("change", (e) => {
-      this.showLines = (e.target as HTMLInputElement).checked;
-      this.syncMarkers();
-    });
+    for (const [id, key] of [["#s3-show-points", "points"], ["#s3-show-lines", "lines"]] as const) {
+      this.measurementsEl.querySelector(id)?.addEventListener("change", (e) => {
+        r.display[key] = (e.target as HTMLInputElement).checked;
+        this.session.touch();
+        this.syncMarkers();
+      });
+    }
   }
+
 
   private setStatus(kind: StatusKind | null, text = ""): void {
     if (!this.statusEl) return;
@@ -1037,40 +1114,46 @@ export class Scans3DTabController implements TabController {
     this.setViewerMessage(parts.length ? null : "Ni modela za prikaz.");
   }
 
-  private syncMarkers(): void {
-    if (!this.viewer || !this.session.hasSession()) return;
+  /**
+   * What is drawn on the model in a panel: points, measurement lines (one per
+   * measurement with all its points, coloured by its place in the panel's list
+   * so it matches the table's swatch) and tooth labels — as switched on.
+   */
+  private overlaysFor(view: ScanView, live: boolean): Pick<SnapshotSpec, "markers" | "lines" | "teeth"> {
     const r = this.record();
-    const teethMode = this.toothMode();
-    this.viewer.setMarkers(
-      landmarksInView(this.set(), this.view)
-        .filter((l) => r.landmarks[l.id])
-        .map((l) => ({
-          id: l.id,
-          abbr: l.abbr,
-          position: r.landmarks[l.id],
-          active: !teethMode && l.id === this.activeLandmark,
-        }))
-    );
-
-    // One line per measurement whose points are all placed, coloured by its
-    // place in the panel's list so the colour matches the table's swatch
-    const defs = this.set().measurements.filter((m) => m.view === this.view);
+    const teethMode = live && this.toothMode();
+    const markers = landmarksInView(this.set(), view)
+      .filter((l) => r.display.points && r.landmarks[l.id])
+      .map((l) => ({
+        id: l.id,
+        abbr: l.abbr,
+        position: r.landmarks[l.id],
+        active: live && !teethMode && l.id === this.activeLandmark,
+      }));
+    const defs = this.set().measurements.filter((m) => m.view === view);
     const lines: ViewerLine[] = [];
-    if (this.showLines) {
+    if (r.display.lines) {
       defs.forEach((def, i) => {
         const segments = measurementSegments(def, r.landmarks);
         if (segments) lines.push({ segments, color: measurementColor(i, defs.length) });
       });
     }
-    this.viewer.setLines(lines);
-
-    const teeth = this.showTeeth ? toothRowsInView(this.view, this.record().stage).flatMap((row) => row.teeth) : [];
-    this.viewer.setToothLabels(
-      teeth
-        .filter((t) => r.teeth[t])
-        .map((t) => ({ id: t, text: t, position: r.teeth[t], active: teethMode && t === this.activeTooth }))
-    );
+    const teeth = (r.display.teeth ? toothRowsInView(view, r.stage).flatMap((row) => row.teeth) : [])
+      .filter((t) => r.teeth[t])
+      .map((t) => ({ id: t, text: t, position: r.teeth[t], active: teethMode && t === this.activeTooth }));
+    return { markers, lines, teeth };
   }
+
+  private syncMarkers(): void {
+    if (!this.viewer || !this.session.hasSession()) return;
+    const o = this.overlaysFor(this.view, true);
+    this.viewer.setMarkers(o.markers);
+    this.viewer.setLines(o.lines);
+    this.viewer.setToothLabels(o.teeth);
+    // The report pictures may now be out of date
+    this.renderSnapshots();
+  }
+
 
   /** A tap on the model: place the selected landmark, then move on to the next empty one. */
   private placeActive(point: Vec3): void {

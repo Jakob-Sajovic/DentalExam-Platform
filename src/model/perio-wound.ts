@@ -18,7 +18,8 @@
  */
 
 import { ExaminationSession, FdiToothNumber } from "./types";
-import { ALL_TEETH, PROBING_ALL_SITES } from "./constants";
+import { PROBING_ALL_SITES } from "./constants";
+import { isPrimaryTooth, sessionTeeth } from "./dentition";
 
 /** Mean CEJ circumference in mm by tooth type (Skalerič 2012, Table II). */
 const CIRCUMFERENCE_MM: Record<number, { male: number; female: number }> = {
@@ -74,7 +75,8 @@ export function computePerioWound(s: ExaminationSession): PerioWound | null {
   let sitesMeasured = 0;
   let sitesPossible = 0;
 
-  for (const t of ALL_TEETH) {
+  // The circumference table covers permanent teeth only
+  for (const t of sessionTeeth(s).filter((x) => !isPrimaryTooth(x))) {
     const pd = s.probing[t];
     // Missing teeth and implants have probing switched off
     if (!pd || !pd.present) continue;

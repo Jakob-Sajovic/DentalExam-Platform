@@ -7,6 +7,7 @@
  */
 
 import type { FdiQuestionnaireData } from "./types";
+import { Dentition, normalizeDentition } from "./dentition";
 
 export type Sex = "male" | "female" | "rather_not_say";
 export const SEX_LABELS: Record<Sex, string> = { male: "Moški", female: "Ženski", rather_not_say: "Ne želi odgovoriti" };
@@ -34,18 +35,23 @@ export type StatRegion = (typeof STAT_REGIONS)[number];
 
 export interface DemographicsData {
   sex: Sex | null;
-  /** ISO date; optional — when given, the age is computed from it. */
+  /** ISO date; optional — when given, the age is filled in from it. */
   birthDate: string;
-  /** Age in years, entered by hand when no birth date is given. */
+  /**
+   * Age in years. Filled in from the birth date (on the day it is entered)
+   * or typed by hand; an age alone never fills in a birth date.
+   */
   ageYears: number | null;
   /** Town or settlement (kraj bivanja). */
   residence: string;
   settlement: Settlement | null;
   region: StatRegion | null;
+  /** Which teeth every chart shows. */
+  dentition: Dentition;
 }
 
 export function makeDefaultDemographics(): DemographicsData {
-  return { sex: null, birthDate: "", ageYears: null, residence: "", settlement: null, region: null };
+  return { sex: null, birthDate: "", ageYears: null, residence: "", settlement: null, region: null, dentition: "permanent" };
 }
 
 export function normalizeDemographics(d: Partial<DemographicsData> | null | undefined): DemographicsData {
@@ -57,6 +63,7 @@ export function normalizeDemographics(d: Partial<DemographicsData> | null | unde
   if (typeof d.residence === "string") out.residence = d.residence;
   if (d.settlement && d.settlement in SETTLEMENT_LABELS) out.settlement = d.settlement;
   if (d.region && (STAT_REGIONS as readonly string[]).includes(d.region)) out.region = d.region;
+  out.dentition = normalizeDentition(d.dentition);
   return out;
 }
 
@@ -68,9 +75,16 @@ export function ageFromBirthDate(birthDate: string, onDate: string): number | nu
   return Math.round(((o - b) / (365.2425 * 24 * 3600 * 1000)) * 100) / 100;
 }
 
-/** The age used everywhere: from the birth date when there is one, else as entered. */
-export function effectiveAge(d: DemographicsData, examDate: string): number | null {
-  return ageFromBirthDate(d.birthDate, examDate) ?? d.ageYears;
+/** Today as an ISO date (local time). */
+export function todayIso(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** The age used everywhere: as stored, else from the birth date on today's date. */
+export function effectiveAge(d: DemographicsData): number | null {
+  return d.ageYears ?? ageFromBirthDate(d.birthDate, todayIso());
 }
 
 /** "4 leta 7 mesecev" for small children, "37,4 let" otherwise. */

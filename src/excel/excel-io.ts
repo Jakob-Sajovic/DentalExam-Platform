@@ -11,6 +11,7 @@ import {
   radiographsToImageRows,
   imageRowsToRadiographs,
   restoreRadiographs,
+  readJsonBackup,
   StoredRadiographImages,
 } from "./session-codec";
 import {
@@ -215,7 +216,6 @@ export async function loadSessionFromExcel(): Promise<ExaminationSession | null>
     await context.sync();
 
     const headers = headerRange.values[0] as string[];
-    const jsonColIdx = headers.indexOf("_json");
 
     // Read last data row
     const lastRowIdx = usedRange.rowCount - 1;
@@ -225,12 +225,8 @@ export async function loadSessionFromExcel(): Promise<ExaminationSession | null>
 
     const values = lastRowRange.values[0];
 
-    // Prefer JSON backup column for reliable reconstruction
-    if (jsonColIdx >= 0 && values[jsonColIdx] && typeof values[jsonColIdx] === "string") {
-      try {
-        result = JSON.parse(values[jsonColIdx] as string) as ExaminationSession;
-      } catch { /* fall through to column-based reconstruction */ }
-    }
+    // Prefer the JSON backup cells for reliable reconstruction
+    result = readJsonBackup(headers, values);
 
     // Fallback: reconstruct from structured columns
     if (!result) {
@@ -318,12 +314,7 @@ export async function loadSessionFromFile(base64: string): Promise<ExaminationSe
     const headers = headerRange.values[0] as string[];
     const values = lastRowRange.values[0];
 
-    const jsonColIdx = headers.indexOf("_json");
-    if (jsonColIdx >= 0 && values[jsonColIdx] && typeof values[jsonColIdx] === "string") {
-      try {
-        result = JSON.parse(values[jsonColIdx] as string) as ExaminationSession;
-      } catch { /* fall through */ }
-    }
+    result = readJsonBackup(headers, values);
     if (!result) {
       result = rowToSession(headers, values);
     }

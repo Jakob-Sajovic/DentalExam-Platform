@@ -43,7 +43,7 @@ const num = (v: number, digits = 1) => v.toFixed(digits).replace(".", ",");
 /** Demographics as header spans, only those filled in. */
 export function buildDemographicsMeta(s: ExaminationSession): string {
   const d = normalizeDemographics(s.demographics);
-  const age = effectiveAge(d, s.patient.date);
+  const age = effectiveAge(d);
   const items: [string, string][] = [];
   if (d.sex) items.push(["Spol:", SEX_LABELS[d.sex]]);
   if (age !== null) items.push(["Starost:", formatAge(age)]);

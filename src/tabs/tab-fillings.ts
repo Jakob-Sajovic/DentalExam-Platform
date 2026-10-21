@@ -6,6 +6,7 @@ import { FdiToothNumber, RestorationCode } from "../model/types";
 import { RESTORATION_LABELS } from "../model/constants";
 import { RESTORATION_BRUSHES, restorationsBlocked, summarizeRestorations } from "../model/restorations";
 import { buildSurfaceChart } from "./surface-chart";
+import { chartJaws, sessionDentition } from "../model/dentition";
 
 const BRUSHES = RESTORATION_BRUSHES;
 const COLOR = new Map<number, string>(BRUSHES.map((b) => [b.code, b.color]));
@@ -90,8 +91,14 @@ export class FillingsTabController implements TabController {
       (parts.length ? `<div class="fc-count-sub">${parts.join(" · ")}</div>` : "");
 
     host.innerHTML = "";
+    const jaws = chartJaws(sessionDentition(s));
+    if (!jaws.length) {
+      host.innerHTML = `<p class="form-hint">Dojenček brez zob — ni zob za oceno (zobovje nastavite na zavihku Preiskovanec).</p>`;
+      return;
+    }
     host.appendChild(
       buildSurfaceChart({
+        jaws,
         isDisabled: blocked,
         fillFor: (t, surf) => COLOR.get(icdas[t].surfaces[surf].restoration ?? -1) || "",
         textFor: (t, surf) => {

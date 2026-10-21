@@ -24,6 +24,7 @@ import {
 import { ALL_TEETH, SCHEMA_VERSION, PROBING_ALL_SITES, ROOT_CARIES_ALL_TEETH, rootCariesEntryCount, LEGACY_RADIOGRAPH_SLOTS } from "../model/constants";
 import { isToothMissing } from "../model/tooth-status";
 import { computePerioWound } from "../model/perio-wound";
+import { STORED_TEETH, sessionTeeth, sessionDentition, normalizeDentition } from "../model/dentition";
 import { normalizeDemographics, effectiveAge, Sex, Settlement, StatRegion } from "../model/demographics";
 import {
   RADIOGRAPH_JAWS,
@@ -34,6 +35,7 @@ import {
 } from "../model/radiographs";
 import {
   makeDefaultProbingData,
+  addMissingTeeth,
   makeDefaultRootCariesData,
   makeDefaultFdiQuestionnaire,
   makeDefaultBOPData,
@@ -88,7 +90,7 @@ export function getColumnHeaders(): string[] {
   // Patient
   h.push("patient_date", "patient_firstName", "patient_lastName", "patient_code", "patient_checkup");
   // Demographics; demo_age_years is the age used (from the birth date when given)
-  h.push("demo_sex", "demo_birth_date", "demo_age_years", "demo_residence", "demo_settlement", "demo_region");
+  h.push("demo_sex", "demo_birth_date", "demo_age_years", "demo_residence", "demo_settlement", "demo_region", "demo_dentition");
 
   // Examiner
   h.push("examiner_firstName", "examiner_lastName");
@@ -99,19 +101,19 @@ export function getColumnHeaders(): string[] {
   h.push("perio_wound_mm2", "perio_burden_mm2", "perio_bleeding_wound_mm2", "perio_wound_sex_basis");
 
   // Plaque per tooth
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     h.push(`plaque_${t}_present`);
     for (const s of PB_SURFACES) h.push(`plaque_${t}_${s}`);
   }
 
   // Bleeding per tooth
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     h.push(`bleeding_${t}_present`);
     for (const s of PB_SURFACES) h.push(`bleeding_${t}_${s}`);
   }
 
   // ICDAS per tooth
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     h.push(`icdas_${t}_status`, `icdas_${t}_specialCode`);
     for (const s of ICDAS_SURFACES) {
       h.push(`icdas_${t}_${s}_rest`, `icdas_${t}_${s}_caries`);
@@ -119,7 +121,7 @@ export function getColumnHeaders(): string[] {
   }
 
   // Probing per tooth
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     h.push(`probing_${t}_present`);
     for (const s of PROBING_ALL_SITES) h.push(`probing_${t}_${s}`);
     h.push(`probing_${t}_furcation`);
@@ -132,7 +134,7 @@ export function getColumnHeaders(): string[] {
   }
 
   // BOP per tooth (6 sites each)
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     for (const s of PROBING_ALL_SITES) h.push(`bop_${t}_${s}`);
   }
 
@@ -143,7 +145,7 @@ export function getColumnHeaders(): string[] {
   }
 
   // ICDAS root caries per tooth (6 sites each)
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     for (const s of PROBING_ALL_SITES) h.push(`ircaries_${t}_${s}`);
   }
 
@@ -174,8 +176,8 @@ export function getColumnHeaders(): string[] {
     if (kind === "intraoral") h.push(`s3_${kind}_teeth`);
   }
 
-  // Full JSON backup for reliable reload
-  h.push("_json");
+  // Full JSON backup for reliable reload, split over several cells
+  h.push(...JSON_COLUMNS);
 
   return h;
 }
@@ -193,33 +195,33 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
 
   // Demographics
   const demo = normalizeDemographics(s.demographics);
-  row.push(demo.sex || "", demo.birthDate, effectiveAge(demo, s.patient.date), demo.residence, demo.settlement || "", demo.region || "");
+  row.push(demo.sex || "", demo.birthDate, effectiveAge(demo), demo.residence, demo.settlement || "", demo.region || "", sessionDentition(s));
 
   // Examiner
   const examiner = s.examiner || { firstName: "", lastName: "" };
   row.push(examiner.firstName, examiner.lastName);
 
   // Computed scores
-  row.push(calcPBPct(s.plaque), calcPBPct(s.bleeding), calcBOPPct(s), calcOhipTotal(s.ohip), calcPresentTeeth(s));
+  row.push(calcPBPct(s, s.plaque), calcPBPct(s, s.bleeding), calcBOPPct(s), calcOhipTotal(s.ohip), calcPresentTeeth(s));
   const wound = computePerioWound(s);
   row.push(wound ? wound.total : null, wound ? wound.burden : null, wound ? wound.bleeding : null, wound ? wound.basis : "");
 
   // Plaque
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const td = s.plaque[t];
     row.push(td.present);
     for (const sf of PB_SURFACES) row.push(td[sf]);
   }
 
   // Bleeding
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const td = s.bleeding[t];
     row.push(td.present);
     for (const sf of PB_SURFACES) row.push(td[sf]);
   }
 
   // ICDAS
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const td = s.icdas[t];
     row.push(td.status, td.specialCode);
     for (const sf of ICDAS_SURFACES) {
@@ -229,7 +231,7 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
   }
 
   // Probing
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const pt = s.probing[t];
     row.push(pt.present);
     for (const site of PROBING_ALL_SITES) row.push(pt[site]);
@@ -246,7 +248,7 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
 
   // BOP
   const bop = s.bop || {};
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     for (const site of PROBING_ALL_SITES) {
       const td = bop[t];
       row.push(td ? (td as Record<string, boolean>)[site] : false);
@@ -263,7 +265,7 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
 
   // ICDAS root caries
   const icRC = s.icdasRootCaries || {};
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     for (const site of PROBING_ALL_SITES) {
       const td = icRC[t];
       row.push(td ? (td as Record<string, number | null>)[site] : null);
@@ -316,9 +318,9 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
     if (kind === "intraoral") row.push(encodeTeeth(rec.teeth));
   }
 
-  // JSON backup. Image data URLs are excluded — they would blow past Excel's
-  // 32 767-character cell limit on their own.
-  row.push(buildJsonBackup(s));
+  // JSON backup. Image data URLs are excluded (they live on the image sheet);
+  // the rest is split over the _json columns, one cell's limit each.
+  row.push(...splitJson(buildJsonBackup(s)));
 
   return row;
 }
@@ -350,18 +352,50 @@ function buildJsonBackup(s: ExaminationSession): string {
   }
   const copy = { ...s, radiographs: slimRadio, scans3d: slimScans };
   const json = JSON.stringify(copy);
-  if (json.length > MAX_CELL_CHARS) {
+  if (json.length > MAX_CELL_CHARS * JSON_COLUMNS.length) {
     // eslint-disable-next-line no-console
-    console.warn(`_json backup is ${json.length} chars, over Excel's ${MAX_CELL_CHARS} limit — omitted.`);
+    console.warn(`_json backup is ${json.length} chars, over ${JSON_COLUMNS.length} cells — omitted.`);
     return "";
   }
   return json;
 }
 
-function calcPBPct(data: Record<FdiToothNumber, PBToothData>): number {
+/**
+ * The JSON backup's cells. "_json" holds the start (older readers find it
+ * there); "_json_2" … continue it. An older reader parsing only "_json" fails
+ * on a split backup and falls back to the flat columns, as intended.
+ */
+export const JSON_COLUMNS = ["_json", "_json_2", "_json_3", "_json_4", "_json_5", "_json_6"];
+
+function splitJson(json: string): string[] {
+  return JSON_COLUMNS.map((_, i) => json.slice(i * MAX_CELL_CHARS, (i + 1) * MAX_CELL_CHARS));
+}
+
+/** The session from the JSON backup cells of a row, or null if absent or unreadable. */
+export function readJsonBackup(headers: string[], values: unknown[]): ExaminationSession | null {
+  let json = "";
+  for (const name of JSON_COLUMNS) {
+    const i = headers.indexOf(name);
+    if (i < 0) break;
+    const v = values[i];
+    if (typeof v !== "string" || !v) break;
+    json += v;
+  }
+  if (!json) return null;
+  try {
+    const s = JSON.parse(json) as ExaminationSession;
+    // Backups written before primary teeth were charted
+    if (s && s.plaque) addMissingTeeth(s);
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function calcPBPct(s: ExaminationSession, data: Record<FdiToothNumber, PBToothData>): number {
   let total = 0;
   let active = 0;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     const td = data[t];
     if (!td.present) continue;
     for (const sf of PB_SURFACES) {
@@ -376,7 +410,7 @@ function calcBOPPct(s: ExaminationSession): number {
   if (!s.bop || !s.probing) return 0;
   let total = 0;
   let active = 0;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     if (!s.probing[t].present) continue;
     for (const site of PROBING_ALL_SITES) {
       total++;
@@ -394,7 +428,7 @@ function calcOhipTotal(ohip: (number | null)[]): number {
 
 function calcPresentTeeth(s: ExaminationSession): number {
   let present = 0;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     if (!isToothMissing(s, t)) present++;
   }
   return present;
@@ -539,13 +573,15 @@ function restoreScanSnapshots(s: ExaminationSession, stored: StoredRadiographIma
   s.scans3d = normalizeScans3D(s.scans3d);
   for (const kind of SCAN_KINDS) {
     const snaps = s.scans3d[kind].snapshots;
-    for (const id of Object.keys(snaps)) if (!snaps[id].dataUrl) delete snaps[id];
     const prefix = `${SNAPSHOT_KEY}${kind}_`;
     for (const key of Object.keys(stored)) {
       if (!key.startsWith(prefix)) continue;
+      const id = key.slice(prefix.length);
       const { image, caption } = stored[key];
-      snaps[key.slice(prefix.length)] = { label: caption, dataUrl: image.dataUrl, width: image.width, height: image.height };
+      // The _json backup keeps the camera and stamp; the sheet the pixels
+      snaps[id] = { ...(snaps[id] || {}), label: caption, dataUrl: image.dataUrl, width: image.width, height: image.height };
     }
+    for (const id of Object.keys(snaps)) if (!snaps[id].dataUrl) delete snaps[id];
   }
 }
 
@@ -635,11 +671,11 @@ export function rowToSession(
     demographics: normalizeDemographics({
       sex: (str("demo_sex") || null) as Sex | null,
       birthDate: str("demo_birth_date"),
-      // With a birth date the age is recomputed; without one it was entered by hand
-      ageYears: str("demo_birth_date") ? null : num("demo_age_years"),
+      ageYears: num("demo_age_years"),
       residence: str("demo_residence"),
       settlement: (str("demo_settlement") || null) as Settlement | null,
       region: (str("demo_region") || null) as StatRegion | null,
+      dentition: normalizeDentition(str("demo_dentition") || null),
     }),
     plaque: {} as ExaminationSession["plaque"],
     bleeding: {} as ExaminationSession["bleeding"],
@@ -708,7 +744,9 @@ export function rowToSession(
   }
 
   // Plaque & bleeding
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
+    // Workbooks from before primary teeth were charted lack their columns: keep defaults
+    if (headers.indexOf(`plaque_${t}_present`) < 0) continue;
     session.plaque[t] = {
       present: bool(`plaque_${t}_present`),
       mesial: bool(`plaque_${t}_mesial`),
@@ -726,7 +764,9 @@ export function rowToSession(
   }
 
   // ICDAS
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
+    // Workbooks from before primary teeth were charted lack their columns: keep defaults
+    if (headers.indexOf(`plaque_${t}_present`) < 0) continue;
     const status = str(`icdas_${t}_status`);
     session.icdas[t] = {
       status: status === "special" ? "special" : "normal",
@@ -743,7 +783,7 @@ export function rowToSession(
   }
 
   // Probing
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const hasProbingCol = headers.indexOf(`probing_${t}_present`) >= 0;
     if (hasProbingCol) {
       session.probing[t] = {
@@ -771,7 +811,7 @@ export function rowToSession(
   }
 
   // BOP
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const hasCol = headers.indexOf(`bop_${t}_distoBuccal`) >= 0;
     if (hasCol) {
       for (const site of PROBING_ALL_SITES) {
@@ -792,7 +832,7 @@ export function rowToSession(
   }
 
   // ICDAS root caries
-  for (const t of ALL_TEETH) {
+  for (const t of STORED_TEETH) {
     const hasCol = headers.indexOf(`ircaries_${t}_distoBuccal`) >= 0;
     if (hasCol) {
       for (const site of PROBING_ALL_SITES) {
@@ -824,6 +864,7 @@ export function rowToSession(
     country: str("fdi_country"),
   };
 
+  addMissingTeeth(session);
   return session;
 }
 

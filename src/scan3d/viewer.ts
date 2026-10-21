@@ -1,4 +1,4 @@
-/* global document, HTMLElement, PointerEvent, ResizeObserver, URL, Blob, requestAnimationFrame */
+/* global document, HTMLElement, PointerEvent, ResizeObserver, URL, Blob, requestAnimationFrame, CanvasRenderingContext2D */
 
 /**
  * three.js viewer for 3D surface scans. Loaded on demand (its own chunk), so
@@ -71,11 +71,14 @@ export interface CameraState {
   up: Vec3;
 }
 
-/** One picture for the report: a camera and the parts shown. */
+/** One picture for the report: a camera, the parts shown and what is drawn on them. */
 export interface SnapshotSpec {
   id: string;
   camera: CameraState;
   parts: string[];
+  markers: ViewerMarker[];
+  lines: ViewerLine[];
+  teeth: ViewerToothLabel[];
 }
 
 /**
@@ -429,40 +432,137 @@ export class ScanViewer {
   }
 
   /**
-   * Pictures for the report, rendered at a fixed size behind the scenes:
-   * the surface only (no markers, lines or labels). The live view is
-   * restored afterwards.
+   * Pictures for the report, rendered at a fixed size behind the scenes, with
+   * each spec's points, lines and tooth labels drawn as in the viewer. The
+   * labels (HTML in the viewer) are painted onto the picture, and only where
+   * their point is not hidden behind the surface. The live view's camera and
+   * parts are restored afterwards; the caller re-sets its own overlays.
    */
   captureSnapshots(specs: SnapshotSpec[], width = 800, height = 600): { id: string; dataUrl: string }[] {
     const saved = this.getCameraState();
     const visible = new Map(Array.from(this.parts.entries()).map(([id, o]) => [id, o.visible]));
-    const overlays = [this.markerGroup, this.lineGroup, this.toothGroup];
     const pixelRatio = this.renderer.getPixelRatio();
     const out: { id: string; dataUrl: string }[] = [];
     try {
-      for (const g of overlays) g.visible = false;
       this.renderer.setPixelRatio(1);
       // Leave the canvas's on-page size alone (updateStyle = false)
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height;
       for (const spec of specs) {
         for (const [id, obj] of Array.from(this.parts.entries())) obj.visible = spec.parts.includes(id);
+        this.setMarkers(spec.markers);
+        this.setLines(spec.lines);
+        this.setToothLabels(spec.teeth);
+        for (const m of this.lineMaterials) m.resolution.set(width, height);
         this.camera.up.set(...spec.camera.up);
         this.camera.position.set(...spec.camera.position);
         const target = new THREE.Vector3(...spec.camera.target);
         this.camera.lookAt(target);
         this.fitClipping(this.camera.position.distanceTo(target));
+        this.camera.updateMatrixWorld();
         this.renderer.render(this.scene, this.camera);
-        out.push({ id: spec.id, dataUrl: this.renderer.domElement.toDataURL("image/jpeg", 0.88) });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+        ctx.drawImage(this.renderer.domElement, 0, 0);
+        const labels = [
+          ...spec.markers.map((m) => ({ text: m.abbr, at: m.position, tooth: false })),
+          ...spec.teeth.map((t) => ({ text: t.text, at: t.position, tooth: true })),
+        ];
+        if (labels.length) {
+          const shown = this.pointsInSight(labels.map((l) => l.at), width, height);
+          labels.forEach((l, i) => {
+            if (shown[i]) drawLabel(ctx, this.toPixel(l.at, width, height), l.text, l.tooth);
+          });
+        }
+        out.push({ id: spec.id, dataUrl: canvas.toDataURL("image/jpeg", 0.88) });
       }
     } finally {
-      for (const g of overlays) g.visible = true;
       for (const [id, obj] of Array.from(this.parts.entries())) obj.visible = visible.get(id) ?? true;
       this.renderer.setPixelRatio(pixelRatio);
       this.resize();
       this.setCameraState(saved);
     }
     return out;
+  }
+
+  /** Canvas pixel (top-left origin) of a point, for the current camera. */
+  private toPixel(p: Vec3, width: number, height: number): [number, number] {
+    const v = new THREE.Vector3(...p).project(this.camera);
+    return [((v.x + 1) / 2) * width, ((1 - v.y) / 2) * height];
+  }
+
+  /**
+   * Which points the camera sees: an off-screen pass draws the visible
+   * surface in black and a small sphere per point in its own colour; a point
+   * is in sight where its colour survives the depth test at its centre.
+   */
+  private pointsInSight(points: Vec3[], width: number, height: number): boolean[] {
+    const target = new THREE.WebGLRenderTarget(width, height);
+    const black = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const idScene = new THREE.Scene();
+    const sphere = new THREE.SphereGeometry(this.markerRadius * 1.2, 12, 8);
+    const materials: THREE.Material[] = [];
+    // Index i is encoded as RGB = 4·(i+1) in steps the readback cannot confuse
+    points.forEach((p, i) => {
+      const code = i + 1;
+      const color = new THREE.Color().setRGB(
+        ((code % 64) * 4) / 255,
+        ((Math.floor(code / 64) % 64) * 4) / 255,
+        0,
+        THREE.LinearSRGBColorSpace
+      );
+      const mat = new THREE.MeshBasicMaterial({ color });
+      materials.push(mat);
+      const mesh = new THREE.Mesh(sphere, mat);
+      mesh.position.set(...p);
+      idScene.add(mesh);
+    });
+    const overlays = [this.markerGroup, this.lineGroup, this.toothGroup];
+    const clear = this.renderer.getClearColor(new THREE.Color());
+    const clearAlpha = this.renderer.getClearAlpha();
+    const pixels = new Uint8Array(width * height * 4);
+    try {
+      for (const g of overlays) g.visible = false;
+      this.scene.overrideMaterial = black;
+      this.renderer.setClearColor(0xffffff, 1);
+      this.renderer.setRenderTarget(target);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.autoClear = false;
+      this.renderer.render(idScene, this.camera);
+      this.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+    } finally {
+      this.renderer.autoClear = true;
+      this.renderer.setRenderTarget(null);
+      this.scene.overrideMaterial = null;
+      this.renderer.setClearColor(clear, clearAlpha);
+      for (const g of overlays) g.visible = true;
+      target.dispose();
+      black.dispose();
+      sphere.dispose();
+      for (const m of materials) m.dispose();
+    }
+    return points.map((p, i) => {
+      const [px, py] = this.toPixel(p, width, height);
+      // The target's rows run bottom-up
+      const x = Math.round(px);
+      const y = Math.round(height - py);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+          const o = (yy * width + xx) * 4;
+          if (pixels[o + 2] > 8) continue; // background (white)
+          const code = Math.round(pixels[o] / 4) + 64 * Math.round(pixels[o + 1] / 4);
+          if (code === i + 1) return true;
+        }
+      }
+      return false;
+    });
   }
 
   /** Look along an axis of the file; pressing the same axis again flips to the other side. */
@@ -618,6 +718,28 @@ export class ScanViewer {
     this.renderer.domElement.remove();
     this.labelRenderer.domElement.remove();
   }
+}
+
+/** A point label painted onto a report picture, styled like the viewer's. */
+function drawLabel(ctx: CanvasRenderingContext2D, at: [number, number], text: string, tooth: boolean): void {
+  ctx.font = "bold 13px 'Segoe UI', sans-serif";
+  const w = ctx.measureText(text).width + 8;
+  const h = 17;
+  const x = at[0] - w / 2;
+  const y = at[1] - h - 7;
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.fillStyle = tooth ? "rgba(255, 255, 255, 0.92)" : "rgba(21, 101, 192, 0.9)";
+  ctx.fill();
+  if (tooth) {
+    ctx.strokeStyle = "#00796b";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.fillStyle = tooth ? "#00594f" : "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, at[0], y + h / 2 + 0.5);
 }
 
 function surfaceMaterial(vertexColors: boolean): THREE.Material {

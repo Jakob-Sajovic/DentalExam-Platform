@@ -30,6 +30,8 @@ import { ALL_TEETH, SCHEMA_VERSION, ROOT_CARIES_ALL_TEETH, PROBING_ALL_SITES, ro
 import { isImplantCode } from "./tooth-status";
 import { Scans3DData, makeDefaultScans3D, normalizeScans3D } from "./scans3d";
 import { DemographicsData, makeDefaultDemographics, normalizeDemographics } from "./demographics";
+import { Dentition, STORED_TEETH, sessionDentition, sessionTeeth } from "./dentition";
+import { stageForDentition } from "./scans3d";
 
 type ChangeListener = () => void;
 
@@ -57,7 +59,7 @@ function createDefaultICDASTooth(): ICDASToothData {
 
 function createDefaultPBData(): PlaqueData {
   const data: Partial<PlaqueData> = {};
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of STORED_TEETH) {
     data[tooth] = createDefaultPBTooth();
   }
   return data as PlaqueData;
@@ -74,7 +76,7 @@ function createDefaultProbingTooth(): ProbingToothData {
 
 function createDefaultProbingData(): ProbingData {
   const data: Partial<ProbingData> = {};
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of STORED_TEETH) {
     data[tooth] = createDefaultProbingTooth();
   }
   return data as ProbingData;
@@ -106,7 +108,7 @@ function createDefaultBOPTooth(): BOPToothData {
 
 function createDefaultBOPData(): BOPData {
   const data: Partial<BOPData> = {};
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of STORED_TEETH) {
     data[tooth] = createDefaultBOPTooth();
   }
   return data as BOPData;
@@ -138,7 +140,7 @@ function createDefaultICDASRootCariesTooth(): ICDASRootCariesToothData {
 
 function createDefaultICDASRootCariesData(): ICDASRootCariesData {
   const data: Partial<ICDASRootCariesData> = {};
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of STORED_TEETH) {
     data[tooth] = createDefaultICDASRootCariesTooth();
   }
   return data as ICDASRootCariesData;
@@ -150,7 +152,7 @@ export function makeDefaultICDASRootCariesData(): ICDASRootCariesData {
 
 function createDefaultICDASData(): ICDASData {
   const data: Partial<ICDASData> = {};
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of STORED_TEETH) {
     data[tooth] = createDefaultICDASTooth();
   }
   return data as ICDASData;
@@ -203,6 +205,24 @@ function createBlankSession(): ExaminationSession {
   };
 }
 
+/**
+ * Sessions saved before primary teeth were charted have entries for the 32
+ * permanent teeth only; give the primary teeth their defaults.
+ */
+export function addMissingTeeth(s: ExaminationSession): void {
+  for (const t of STORED_TEETH) {
+    if (s.plaque && !s.plaque[t]) s.plaque[t] = createDefaultPBTooth();
+    if (s.bleeding && !s.bleeding[t]) s.bleeding[t] = createDefaultPBTooth();
+    if (s.icdas && !s.icdas[t]) s.icdas[t] = createDefaultICDASTooth();
+    if (s.probing && !s.probing[t]) s.probing[t] = createDefaultProbingData()[t];
+    if (s.bop && !s.bop[t]) s.bop[t] = createDefaultBOPData()[t];
+    if (s.icdasRootCaries && !s.icdasRootCaries[t]) s.icdasRootCaries[t] = createDefaultICDASRootCariesData()[t];
+  }
+}
+
+export { sessionDentition, sessionTeeth };
+
+
 export class SessionState {
   private static instance: SessionState | null = null;
 
@@ -232,6 +252,7 @@ export class SessionState {
 
   // Load an existing session (e.g. from Excel)
   loadSession(data: ExaminationSession): void {
+    addMissingTeeth(data);
     this.session = data;
     this.clearedPB = {};
     this.notifyListeners();
@@ -323,10 +344,24 @@ export class SessionState {
     return this.getSession().fdiQuestionnaire;
   }
 
+  /** Set the dentition; the 3D intraoral landmark list follows it. */
+  setDentition(d: Dentition): void {
+    this.getDemographics().dentition = d;
+    this.getScans3D().intraoral.stage = stageForDentition(d);
+    this.touch();
+  }
+
   getDemographics(): DemographicsData {
     const s = this.getSession();
-    // Sessions saved before demographics existed
-    if (!s.demographics) s.demographics = normalizeDemographics(null);
+    // Sessions saved before demographics (or the dentition) existed: take the
+    // dentition from the 3D list they were measured with, if any
+    if (!s.demographics || !s.demographics.dentition) {
+      const stage = s.scans3d?.intraoral?.stage;
+      s.demographics = normalizeDemographics({
+        ...(s.demographics || {}),
+        dentition: stage === "infant" ? "infant" : stage === "deciduous" ? "primary" : "permanent",
+      });
+    }
     return s.demographics;
   }
 
@@ -336,7 +371,7 @@ export class SessionState {
     // parts of scans3d. Only replaced when incomplete, so callers may hold on
     // to the records.
     const d = s.scans3d;
-    if (!d || !d.head || !d.intraoral || !d.head.snapshots || !d.intraoral.snapshots) s.scans3d = normalizeScans3D(d);
+    if (!d || !d.head || !d.intraoral || !d.head.display || !d.intraoral.display) s.scans3d = normalizeScans3D(d);
     return s.scans3d;
   }
 

@@ -12,18 +12,17 @@
  */
 
 import { FdiToothNumber, ICDASSurface } from "../model/types";
+import { ChartJaw, ToothSlot, quadrantOf } from "../model/dentition";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-const UPPER_ROW: FdiToothNumber[] = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
-const LOWER_ROW: FdiToothNumber[] = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
 
 type Pos = "top" | "bottom" | "left" | "right" | "center";
 
 /** Screen position → anatomical surface. */
 export function surfaceAt(tooth: FdiToothNumber, pos: Pos): ICDASSurface {
   if (pos === "center") return "occlusal";
-  const quadrant = Math.floor(tooth / 10);
+  const quadrant = quadrantOf(tooth);
   switch (pos) {
     case "top":
       return quadrant <= 2 ? "buccal" : "lingual";
@@ -38,6 +37,8 @@ export function surfaceAt(tooth: FdiToothNumber, pos: Pos): ICDASSurface {
 }
 
 export interface SurfaceChartOptions {
+  /** Jaw rows top to bottom (dentition.chartJaws). */
+  jaws: ChartJaw[];
   /** Drawn faded and not tappable. */
   isDisabled(tooth: FdiToothNumber): boolean;
   /** Inline fill for a surface, or "" to leave it blank. */
@@ -51,12 +52,18 @@ export interface SurfaceChartOptions {
 export function buildSurfaceChart(opts: SurfaceChartOptions): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "fc-chart";
-  wrap.appendChild(jawLabel("zgornja čeljust"));
-  wrap.appendChild(numberRow(UPPER_ROW));
-  wrap.appendChild(toothRow(UPPER_ROW, opts));
-  wrap.appendChild(toothRow(LOWER_ROW, opts));
-  wrap.appendChild(numberRow(LOWER_ROW));
-  wrap.appendChild(jawLabel("spodnja čeljust"));
+  for (const j of opts.jaws) {
+    // Numbers on the outside: above an upper row, below a lower one
+    if (j.jaw === "upper") {
+      wrap.appendChild(jawLabel(j.label));
+      wrap.appendChild(numberRow(j.slots));
+      wrap.appendChild(toothRow(j.slots, opts));
+    } else {
+      wrap.appendChild(toothRow(j.slots, opts));
+      wrap.appendChild(numberRow(j.slots));
+      wrap.appendChild(jawLabel(j.label));
+    }
+  }
   const sides = document.createElement("div");
   sides.className = "fc-sides";
   sides.innerHTML = `<span>pacientova DESNA</span><span>pacientova LEVA</span>`;
@@ -71,24 +78,29 @@ function jawLabel(text: string): HTMLElement {
   return el;
 }
 
-function numberRow(teeth: FdiToothNumber[]): HTMLElement {
+function numberRow(teeth: ToothSlot[]): HTMLElement {
   const row = document.createElement("div");
   row.className = "fc-row fc-numbers";
   for (const t of teeth) {
     const cell = document.createElement("div");
     cell.className = "fc-number";
-    cell.textContent = String(t);
+    cell.textContent = t === null ? "" : String(t);
     row.appendChild(cell);
   }
   return row;
 }
 
-function toothRow(teeth: FdiToothNumber[], opts: SurfaceChartOptions): HTMLElement {
+function toothRow(teeth: ToothSlot[], opts: SurfaceChartOptions): HTMLElement {
   const row = document.createElement("div");
   row.className = "fc-row";
   for (const tooth of teeth) {
     const cell = document.createElement("div");
     cell.className = "fc-cell";
+    // An empty column (primary rows have no molars 6–8)
+    if (tooth === null) {
+      row.appendChild(cell);
+      continue;
+    }
     const disabled = opts.isDisabled(tooth);
     if (disabled) cell.classList.add("disabled");
     const svg = buildSvg(tooth, 40);

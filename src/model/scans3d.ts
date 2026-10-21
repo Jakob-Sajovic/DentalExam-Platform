@@ -11,6 +11,8 @@
  * Pure module: no DOM, no three.js, so the codec and report can use it.
  */
 
+import type { Dentition } from "./dentition";
+
 export type ScanKind = "head" | "intraoral";
 export const SCAN_KINDS: ScanKind[] = ["head", "intraoral"];
 
@@ -105,7 +107,15 @@ export interface ScanRecord {
   teeth: Record<string, Vec3>;
   /** Pictures for the report, by SNAPSHOT_PLAN id. Kept out of the _json cell. */
   snapshots: Record<string, ScanSnapshot>;
+  /** What is drawn on the model, in the viewer and in the report's pictures. */
+  display: ScanDisplay;
   note: string;
+}
+
+export interface ScanDisplay {
+  points: boolean;
+  lines: boolean;
+  teeth: boolean;
 }
 
 export interface ScanSnapshot {
@@ -114,6 +124,20 @@ export interface ScanSnapshot {
   dataUrl: string;
   width: number;
   height: number;
+  /** How it was taken, so it can be retaken when the points change. */
+  view?: ScanView;
+  camera?: { position: Vec3; target: Vec3; up: Vec3 };
+  parts?: string[];
+  /** overlayStamp() of the record when taken. */
+  stamp?: string;
+}
+
+/** A fingerprint of what the pictures show on the model: points, teeth, switches. */
+export function overlayStamp(r: ScanRecord): string {
+  const text = JSON.stringify([r.landmarks, r.teeth, r.display, r.landmarkSet]);
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
 }
 
 /**
@@ -522,6 +546,11 @@ export const CLEFT_LABELS: Record<CleftType, string> = {
   bilateral: "Obojestranski razcep",
 };
 
+/** The intraoral list stage for the patient's dentition (mixed is measured as permanent). */
+export function stageForDentition(d: Dentition): DentitionStage {
+  return d === "infant" ? "infant" : d === "primary" ? "deciduous" : "permanent";
+}
+
 /** The list a record is measured with: by dentition, and for an infant by the cleft. */
 export function activeSet(kind: ScanKind, record: Pick<ScanRecord, "stage" | "cleft">): LandmarkSet {
   if (kind === "head") return HEAD_SET;
@@ -570,6 +599,7 @@ export function makeEmptyScanRecord(kind: ScanKind, stage: DentitionStage = "per
     landmarks: {},
     teeth: {},
     snapshots: {},
+    display: { points: true, lines: true, teeth: true },
     note: "",
   };
 }
@@ -596,6 +626,11 @@ export function normalizeScans3D(data: Partial<Scans3DData> | null | undefined):
       landmarks: r.landmarks && typeof r.landmarks === "object" ? r.landmarks : {},
       teeth: r.teeth && typeof r.teeth === "object" ? r.teeth : {},
       snapshots: r.snapshots && typeof r.snapshots === "object" ? r.snapshots : {},
+      display: {
+        points: r.display?.points !== false,
+        lines: r.display?.lines !== false,
+        teeth: r.display?.teeth !== false,
+      },
       note: r.note || "",
     };
   }

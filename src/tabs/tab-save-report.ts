@@ -2,7 +2,8 @@ import { TabController } from "./tab-manager";
 import { SessionState } from "../model/session";
 import { FdiToothNumber, PBSurface, PBToothData, ICDASData, ExaminationSession } from "../model/types";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
-import { ALL_TEETH, PROBING_ALL_SITES } from "../model/constants";
+import { PROBING_ALL_SITES } from "../model/constants";
+import { sessionTeeth } from "../model/dentition";
 import { SessionStore } from "../storage/session-store";
 import { ExcelStore } from "../storage/excel-store";
 import { generateReport } from "../report/report-generator";
@@ -316,7 +317,7 @@ export class SaveReportTabController implements TabController {
     let cariesSurfaces = 0;
     let restoredSurfaces = 0;
 
-    for (const tooth of ALL_TEETH) {
+    for (const tooth of sessionTeeth(this.session.getSession())) {
       const td = data[tooth];
       if (td.status === "special" && !isImplantTooth(td)) {
         if (td.specialCode !== null) assessed++;
@@ -338,11 +339,12 @@ export class SaveReportTabController implements TabController {
 
   private calcTeethCount(s: ExaminationSession): { present: number; missing: number } {
     let missing = 0;
-    for (const tooth of ALL_TEETH) {
+    const teeth = sessionTeeth(s);
+    for (const tooth of teeth) {
       // ICDAS special case (except 96), or absent on any chart; implants count as missing
       if (isToothMissing(s, tooth)) missing++;
     }
-    return { present: 32 - missing, missing };
+    return { present: teeth.length - missing, missing };
   }
 
   private buildFdiSummaryCard(s: ExaminationSession): string {

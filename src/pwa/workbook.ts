@@ -12,6 +12,7 @@ import {
   radiographsToImageRows,
   imageRowsToRadiographs,
   restoreRadiographs,
+  readJsonBackup,
   StoredRadiographImages,
 } from "../excel/session-codec";
 import {
@@ -67,14 +68,7 @@ export async function readWorkbook(file: File): Promise<ExaminationSession | nul
   let session: ExaminationSession | null = null;
 
   // The _json backup is authoritative when present; flat columns are the fallback.
-  const jsonIdx = headers.indexOf("_json");
-  if (jsonIdx >= 0 && typeof values[jsonIdx] === "string" && values[jsonIdx]) {
-    try {
-      session = JSON.parse(values[jsonIdx] as string) as ExaminationSession;
-    } catch {
-      /* fall through */
-    }
-  }
+  session = readJsonBackup(headers, values);
   if (!session) session = rowToSession(headers, values);
   if (!session) return null;
 

@@ -231,15 +231,21 @@ export const PROBING_LINGUAL_SITES_REVERSED: ProbingSite[] = ["mesioLingual", "l
  *  - Teeth 21–28 and 41–48, buccal: mB, B, dB (reversed)
  *  - Teeth 11–18 and 31–38, lingual: mL, L, dL (reversed)
  */
-export function getVisualBuccalSites(tooth: FdiToothNumber): ProbingSite[] {
+/** Quadrant 1–4; primary quadrants 5–8 fold onto them (same as dentition.quadrantOf). */
+function foldQuadrant(tooth: number): number {
   const q = Math.floor(tooth / 10);
+  return q > 4 ? q - 4 : q;
+}
+
+export function getVisualBuccalSites(tooth: FdiToothNumber): ProbingSite[] {
+  const q = foldQuadrant(tooth);
   // Q2 (21-28) and Q4 (41-48) buccal → reversed
   if (q === 2 || q === 4) return PROBING_BUCCAL_SITES_REVERSED;
   return PROBING_BUCCAL_SITES;
 }
 
 export function getVisualLingualSites(tooth: FdiToothNumber): ProbingSite[] {
-  const q = Math.floor(tooth / 10);
+  const q = foldQuadrant(tooth);
   // Q1 (11-18) and Q3 (31-38) lingual → reversed
   if (q === 1 || q === 3) return PROBING_LINGUAL_SITES_REVERSED;
   return PROBING_LINGUAL_SITES;

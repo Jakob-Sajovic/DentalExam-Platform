@@ -9,10 +9,6 @@ import {
   FdiQuestionnaireData,
 } from "../model/types";
 import {
-  UPPER_RIGHT,
-  UPPER_LEFT,
-  LOWER_JAW_MIRRORED,
-  ALL_TEETH,
   RESTORATION_LABELS,
   CARIES_LABELS,
   SPECIAL_CASE_LABELS,
@@ -43,6 +39,7 @@ import {
 } from "../dental/chart-renderer";
 import { buildToothOutlinesSvg, TOOTH_CENTER_PCT, SITE_SPREAD } from "../dental/tooth-outlines";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import { ChartJaw, ToothSlot, chartJaws, sessionDentition, sessionTeeth } from "../model/dentition";
 import {
   buildDemographicsMeta,
   buildFillingsSection,
@@ -69,6 +66,27 @@ function esc(str: string): string {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+/** Jaw rows charted for the session's dentition (empty for an infant). */
+function jawsOf(s: ExaminationSession): ChartJaw[] {
+  return chartJaws(sessionDentition(s));
+}
+
+function teethOf(j: ChartJaw): FdiToothNumber[] {
+  return j.slots.filter((t): t is FdiToothNumber => t !== null);
+}
+
+/** Upper + lower row pairs, one chart figure each: permanent, then primary. */
+function chartPairs(s: ExaminationSession): { upper: ToothSlot[]; lower: ToothSlot[] }[] {
+  const jaws = jawsOf(s);
+  const pairs: { upper: ToothSlot[]; lower: ToothSlot[] }[] = [];
+  for (const primary of [false, true]) {
+    const up = jaws.find((j) => j.jaw === "upper" && j.primary === primary);
+    const low = jaws.find((j) => j.jaw === "lower" && j.primary === primary);
+    if (up && low) pairs.push({ upper: up.slots, lower: low.slots });
+  }
+  return pairs;
 }
 
 function patientDisplayName(s: ExaminationSession): string {
@@ -130,8 +148,8 @@ export function buildReportBody(s: ExaminationSession): string {
     </div>
   </header>
 
-  ${buildPBSection("Indeks zobnih oblog — VPI", s.plaque, "#ffd335")}
-  ${buildPBSection("Indeks krvavitve dlesni — GBI", s.bleeding, "#ff6b6b")}
+  ${buildPBSection(s, "Indeks zobnih oblog — VPI", s.plaque, "#ffd335")}
+  ${buildPBSection(s, "Indeks krvavitve dlesni — GBI", s.bleeding, "#ff6b6b")}
   ${buildICDASSection(s)}
   ${buildFillingsSection(s)}
   ${buildICDASRootCariesSection(s)}
@@ -256,12 +274,13 @@ function buildRadiographSection(s: ExaminationSession): string {
 
 // ── VPI / GBI section ─────────────────────────────────────────────
 
-function buildPBSection(title: string, data: Record<FdiToothNumber, PBToothData>, activeColor: string): string {
+function buildPBSection(s: ExaminationSession, title: string, data: Record<FdiToothNumber, PBToothData>, activeColor: string): string {
   const surfaces: PBSurface[] = ["mesial", "distal", "buccal", "lingual"];
   let totalSurf = 0;
   let activeSurf = 0;
+  if (!jawsOf(s).length) return "";
 
-  for (const tooth of ALL_TEETH) {
+  for (const tooth of sessionTeeth(s)) {
     const td = data[tooth];
     if (!td.present) continue;
     for (const sf of surfaces) {
@@ -272,16 +291,12 @@ function buildPBSection(title: string, data: Record<FdiToothNumber, PBToothData>
 
   const pct = totalSurf > 0 ? ((activeSurf / totalSurf) * 100).toFixed(1) : "0.0";
 
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
-
   return `
   <section class="section">
     <h2>${title}</h2>
     <p class="score"><strong>${pct}%</strong> (${activeSurf} od ${totalSurf} površin)</p>
-    <div class="chart-figure">${buildPBChartSvg(data, activeColor)}</div>
-    ${buildPBTransposedTable("Zgornja čeljust", upperTeeth, data, surfaces, activeColor)}
-    ${buildPBTransposedTable("Spodnja čeljust", lowerTeeth, data, surfaces, activeColor)}
+    ${chartPairs(s).map((p) => `<div class="chart-figure">${buildPBChartSvg(data, activeColor, p.upper, p.lower)}</div>`).join("")}
+    ${jawsOf(s).map((j) => buildPBTransposedTable(j.label, teethOf(j), data, surfaces, activeColor)).join("")}
   </section>`;
 }
 
@@ -324,14 +339,12 @@ function buildPBTransposedTable(
 
 function buildICDASSection(s: ExaminationSession): string {
   const icdas = s.icdas;
-
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
+  if (!jawsOf(s).length) return "";
 
   return `
   <section class="section page-break">
     <h2>ICDAS ocena</h2>
-    <div class="chart-figure">${buildICDASChartSvg(icdas)}</div>
+    ${chartPairs(s).map((p) => `<div class="chart-figure">${buildICDASChartSvg(icdas, p.upper, p.lower)}</div>`).join("")}
     <div class="chart-legend">
       <span class="legend-item"><span class="legend-swatch" style="background:#d4edda"></span>0</span>
       <span class="legend-item"><span class="legend-swatch" style="background:#fff3cd"></span>1</span>
@@ -343,8 +356,7 @@ function buildICDASSection(s: ExaminationSession): string {
       <span class="legend-item"><span class="legend-swatch" style="background:#fff;border:1.5px solid #2196F3"></span>Restavracije</span>
       <span class="legend-item"><span class="legend-swatch" style="background:#e0e0e0"></span>Poseben</span>
     </div>
-    ${buildICDASTransposedTable("Zgornja čeljust", upperTeeth, icdas)}
-    ${buildICDASTransposedTable("Spodnja čeljust", lowerTeeth, icdas)}
+    ${jawsOf(s).map((j) => buildICDASTransposedTable(j.label, teethOf(j), icdas)).join("")}
   </section>`;
 }
 
@@ -413,10 +425,7 @@ function getProbingDepthColor(avg: number): string {
 }
 
 function buildProbingSection(s: ExaminationSession): string {
-  if (!s.probing) return "";
-
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
+  if (!s.probing || !jawsOf(s).length) return "";
 
   return `
   <section class="section page-break">
@@ -427,13 +436,12 @@ function buildProbingSection(s: ExaminationSession): string {
       <span class="legend-item"><span class="legend-swatch" style="background:#ff9800"></span>5 mm</span>
       <span class="legend-item"><span class="legend-swatch" style="background:#f44336"></span>&ge;6 mm</span>
     </div>
-    ${buildProbingJawReport("Zgornja čeljust", upperTeeth, s.probing, "upper")}
-    ${buildProbingJawReport("Spodnja čeljust", lowerTeeth, s.probing, "lower")}
+    ${jawsOf(s).map((j) => buildProbingJawReport(j.label, j.slots, s.probing, j.jaw)).join("")}
   </section>`;
 }
 
 function buildProbingAreaChartSvg(
-  teeth: FdiToothNumber[],
+  teeth: ToothSlot[],
   sites: ProbingSite[],
   data: ProbingData,
   width: number,
@@ -459,6 +467,7 @@ function buildProbingAreaChartSvg(
 
   for (let ti = 0; ti < teeth.length; ti++) {
     const tooth = teeth[ti];
+    if (tooth === null) continue;
     const td = data[tooth];
     const centerX = width * (TOOTH_CENTER_PCT[ti] / 100);
 
@@ -509,10 +518,11 @@ function buildProbingAreaChartSvg(
 
 function buildProbingJawReport(
   jawLabel: string,
-  teeth: FdiToothNumber[],
+  slots: ToothSlot[],
   data: ProbingData,
   jaw: "upper" | "lower"
 ): string {
+  const teeth = slots.filter((t): t is FdiToothNumber => t !== null);
   const reportW = 600;
 
   // Upper: buccal top + palatal bottom; Lower: lingual top + buccal bottom
@@ -527,19 +537,20 @@ function buildProbingJawReport(
 
   // Top chart
   html += `<div style="font-size:9px;color:#888;margin-bottom:2px;">${topLabel}</div>`;
-  html += `<div class="probing-report-chart">${buildProbingAreaChartSvg(teeth, topSites, data, reportW, jaw)}</div>`;
+  html += `<div class="probing-report-chart">${buildProbingAreaChartSvg(slots, topSites, data, reportW, jaw)}</div>`;
 
   // Tooth number row between charts
   html += `<div class="probing-report-chart"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${reportW} 12" style="width:100%;max-width:${reportW}px;height:12px;" preserveAspectRatio="none">`;
-  for (let i = 0; i < teeth.length; i++) {
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i] === null) continue;
     const cx = reportW * (TOOTH_CENTER_PCT[i] / 100);
-    html += `<text x="${cx.toFixed(1)}" y="9" text-anchor="middle" font-size="7" font-family="Segoe UI, sans-serif" fill="#555">${teeth[i]}</text>`;
+    html += `<text x="${cx.toFixed(1)}" y="9" text-anchor="middle" font-size="7" font-family="Segoe UI, sans-serif" fill="#555">${slots[i]}</text>`;
   }
   html += `</svg></div>`;
 
   // Bottom chart
   html += `<div style="font-size:9px;color:#888;margin-bottom:2px;">${bottomLabel}</div>`;
-  html += `<div class="probing-report-chart">${buildProbingAreaChartSvg(teeth, bottomSites, data, reportW, jaw)}</div>`;
+  html += `<div class="probing-report-chart">${buildProbingAreaChartSvg(slots, bottomSites, data, reportW, jaw)}</div>`;
 
   // Transposed data table — use visual site ordering per tooth
   // Since teeth may come from different quadrants, we list all 6 site keys and label them
@@ -583,7 +594,7 @@ function buildBOPSection(s: ExaminationSession): string {
 
   let totalSites = 0;
   let bleedingSites = 0;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     if (!s.probing[t].present) continue;
     for (const site of PROBING_ALL_SITES) {
       totalSites++;
@@ -594,9 +605,6 @@ function buildBOPSection(s: ExaminationSession): string {
   if (bleedingSites === 0) return "";
 
   const pct = totalSites > 0 ? ((bleedingSites / totalSites) * 100).toFixed(1) : "0.0";
-
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
 
   const buildTable = (teeth: FdiToothNumber[], jawLabel: string): string => {
     const allSites: ProbingSite[] = [...PROBING_BUCCAL_SITES, ...PROBING_LINGUAL_SITES];
@@ -626,8 +634,7 @@ function buildBOPSection(s: ExaminationSession): string {
   <section class="section">
     <h2>Krvavitev ob sondiranju — BOP</h2>
     <p class="score"><strong>${pct}%</strong> (${bleedingSites} od ${totalSites} mest)</p>
-    ${buildTable(upperTeeth, "Zgornja čeljust")}
-    ${buildTable(lowerTeeth, "Spodnja čeljust")}
+    ${jawsOf(s).map((j) => buildTable(teethOf(j), j.label)).join("")}
   </section>`;
 }
 
@@ -635,7 +642,8 @@ function buildBOPSection(s: ExaminationSession): string {
 
 function buildFurcationSection(s: ExaminationSession): string {
   const fi = s.furcationInvolvement;
-  if (!fi) return "";
+  // Graded on permanent molars only
+  if (!fi || !jawsOf(s).some((j) => !j.primary)) return "";
 
   // Check if any non-zero data exists
   let hasData = false;
@@ -690,7 +698,7 @@ function buildICDASRootCariesSection(s: ExaminationSession): string {
 
   // Check if any data exists
   let hasData = false;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     const td = icRC[t];
     if (td) {
       for (const site of PROBING_ALL_SITES) {
@@ -701,8 +709,6 @@ function buildICDASRootCariesSection(s: ExaminationSession): string {
   }
   if (!hasData) return "";
 
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
   const allSites: ProbingSite[] = [...PROBING_BUCCAL_SITES, ...PROBING_LINGUAL_SITES];
 
   const buildTable = (teeth: FdiToothNumber[], jawLabel: string): string => {
@@ -733,8 +739,7 @@ function buildICDASRootCariesSection(s: ExaminationSession): string {
   <section class="section">
     <h2>Koreninski karies</h2>
     <p style="font-size:10px;color:#555;margin-bottom:8px;">0 = brez kariesa, 1 = začetna lezija, 2 = kavitirana lezija</p>
-    ${buildTable(upperTeeth, "Zgornja čeljust")}
-    ${buildTable(lowerTeeth, "Spodnja čeljust")}
+    ${jawsOf(s).map((j) => buildTable(teethOf(j), j.label)).join("")}
   </section>`;
 }
 
@@ -820,7 +825,7 @@ function autoCalcFdi(s: ExaminationSession): FdiQuestionnaireData {
   // Q5 - Tooth loss
   if (fdi.toothLoss === null) {
     fdi.toothLoss = "no";
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(s)) {
       if (isToothMissing(s, t)) { fdi.toothLoss = "yes"; break; }
     }
   }
@@ -828,7 +833,7 @@ function autoCalcFdi(s: ExaminationSession): FdiQuestionnaireData {
   // Q6 - Plaque
   if (fdi.plaque === null) {
     let total = 0, active = 0;
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(s)) {
       if (!s.plaque[t].present) continue;
       for (const sf of pbSurfaces) { total++; if (s.plaque[t][sf]) active++; }
     }
@@ -839,7 +844,7 @@ function autoCalcFdi(s: ExaminationSession): FdiQuestionnaireData {
   // Q7 - Bleeding
   if (fdi.bleeding === null) {
     let total = 0, active = 0;
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(s)) {
       if (!s.bleeding[t].present) continue;
       for (const sf of pbSurfaces) { total++; if (s.bleeding[t][sf]) active++; }
     }
@@ -850,7 +855,7 @@ function autoCalcFdi(s: ExaminationSession): FdiQuestionnaireData {
   // Q8 - Probing depth
   if (fdi.probingDepth === null && s.probing) {
     let maxDepth = 0, teethGt5 = 0, presentTeeth = 0;
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(s)) {
       const td = s.probing[t];
       if (!td.present) continue;
       presentTeeth++;
@@ -958,9 +963,12 @@ function chartX(index: number): number {
   return CHART_HALF_W + CHART.midGap + (index - 8) * (CHART.cell + CHART.gap);
 }
 
-function buildPBChartSvg(data: Record<FdiToothNumber, PBToothData>, activeColor: string): string {
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
+function buildPBChartSvg(
+  data: Record<FdiToothNumber, PBToothData>,
+  activeColor: string,
+  upperTeeth: ToothSlot[],
+  lowerTeeth: ToothSlot[]
+): string {
   const c = CHART.cell;
   const h = c / 2;
 
@@ -975,6 +983,7 @@ function buildPBChartSvg(data: Record<FdiToothNumber, PBToothData>, activeColor:
   // Upper jaw
   for (let i = 0; i < upperTeeth.length; i++) {
     const tooth = upperTeeth[i];
+    if (tooth === null) continue;
     const x = chartX(i);
     parts.push(pbToothSvgStr(x, upperToothY, c, h, tooth, data[tooth], activeColor));
     parts.push(`<text x="${x + h}" y="${upperNumY + CHART.numH - 2}" text-anchor="middle" font-size="7" font-family="sans-serif" fill="#333">${tooth}</text>`);
@@ -987,6 +996,7 @@ function buildPBChartSvg(data: Record<FdiToothNumber, PBToothData>, activeColor:
   // Lower jaw
   for (let i = 0; i < lowerTeeth.length; i++) {
     const tooth = lowerTeeth[i];
+    if (tooth === null) continue;
     const x = chartX(i);
     parts.push(`<text x="${x + h}" y="${lowerNumY + CHART.numH - 2}" text-anchor="middle" font-size="7" font-family="sans-serif" fill="#333">${tooth}</text>`);
     parts.push(pbToothSvgStr(x, lowerToothY, c, h, tooth, data[tooth], activeColor));
@@ -1028,9 +1038,7 @@ const ICDAS_CARIES_COLORS: Record<number, string> = {
   4: "#ffab91", 5: "#ef9a9a", 6: "#e57373",
 };
 
-function buildICDASChartSvg(icdas: ExaminationSession["icdas"]): string {
-  const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-  const lowerTeeth = [...LOWER_JAW_MIRRORED];
+function buildICDASChartSvg(icdas: ExaminationSession["icdas"], upperTeeth: ToothSlot[], lowerTeeth: ToothSlot[]): string {
   const c = CHART.cell;
   const h = c / 2;
   const m = Math.round(c * 0.25);
@@ -1045,6 +1053,7 @@ function buildICDASChartSvg(icdas: ExaminationSession["icdas"]): string {
 
   for (let i = 0; i < upperTeeth.length; i++) {
     const tooth = upperTeeth[i];
+    if (tooth === null) continue;
     const x = chartX(i);
     parts.push(icdasToothSvgStr(x, upperToothY, c, m, tooth, icdas[tooth]));
     parts.push(`<text x="${x + h}" y="${upperNumY + CHART.numH - 2}" text-anchor="middle" font-size="7" font-family="sans-serif" fill="#333">${tooth}</text>`);
@@ -1055,6 +1064,7 @@ function buildICDASChartSvg(icdas: ExaminationSession["icdas"]): string {
 
   for (let i = 0; i < lowerTeeth.length; i++) {
     const tooth = lowerTeeth[i];
+    if (tooth === null) continue;
     const x = chartX(i);
     parts.push(`<text x="${x + h}" y="${lowerNumY + CHART.numH - 2}" text-anchor="middle" font-size="7" font-family="sans-serif" fill="#333">${tooth}</text>`);
     parts.push(icdasToothSvgStr(x, lowerToothY, c, m, tooth, icdas[tooth]));

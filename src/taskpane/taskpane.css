@@ -1712,3 +1712,7 @@ tr.furc-disabled {
 
 /* Patient tab: demographics, two columns when there is room */
 .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); column-gap: 12px; }
+
+/* Dentition: empty chart columns (primary rows have no molars 6–8) */
+.slot-empty { visibility: hidden; pointer-events: none; }
+.chart-jaw-caption { font-size: 10px; color: #605e5c; text-transform: uppercase; letter-spacing: 0.4px; margin: 6px 0 2px; }

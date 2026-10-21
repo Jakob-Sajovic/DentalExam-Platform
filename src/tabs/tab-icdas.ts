@@ -10,10 +10,6 @@ import {
   ICDASRootCariesScore,
 } from "../model/types";
 import {
-  UPPER_RIGHT,
-  UPPER_LEFT,
-  LOWER_JAW_MIRRORED,
-  ALL_TEETH,
   RESTORATION_LABELS,
   CARIES_LABELS,
   SPECIAL_CASE_LABELS,
@@ -24,6 +20,8 @@ import {
   PROBING_SITE_LABELS,
   PROBING_ALL_SITES,
 } from "../model/constants";
+import { Dentition, ToothSlot, STORED_TEETH, chartJaws } from "../model/dentition";
+import { sessionDentition } from "../model/session";
 import {
   createICDASToothSvg,
   getICDASSurfaceForPosition,
@@ -41,6 +39,8 @@ export class ICDASTabController implements TabController {
   private detailPanel: HTMLElement | null = null;
   private rootCariesContainer: HTMLElement | null = null;
   private selectedTooth: FdiToothNumber | null = null;
+  /** Dentition the chart was built for; rebuilt when it changes. */
+  private builtFor: Dentition | null = null;
 
   constructor(session: SessionState) {
     this.session = session;
@@ -79,8 +79,9 @@ export class ICDASTabController implements TabController {
     this.detailPanel = panel.querySelector("#icdas-detail") as HTMLElement;
     this.rootCariesContainer = panel.querySelector("#icdas-root-caries-content") as HTMLElement;
 
-    this.buildChart();
-    this.buildICDASRootCariesUI();
+    this.buildChart("permanent");
+    this.buildICDASRootCariesUI("permanent");
+    this.wireRootCaries();
 
     // Event delegation for tooth clicks
     this.chartContainer.addEventListener("click", (e) => this.handleChartClick(e));
@@ -109,6 +110,12 @@ export class ICDASTabController implements TabController {
 
   onActivate(): void {
     if (!this.session.hasSession()) return;
+    const d = sessionDentition(this.session.getSession());
+    if (d !== this.builtFor) {
+      this.closeDetail();
+      this.buildChart(d);
+      this.buildICDASRootCariesUI(d);
+    }
     this.refreshAllTeeth();
     if (this.selectedTooth !== null) {
       this.showDetailForTooth(this.selectedTooth);
@@ -122,21 +129,34 @@ export class ICDASTabController implements TabController {
 
   // ── Chart building ──────────────────────────────────────────────
 
-  private buildChart(): void {
+  private buildChart(d: Dentition): void {
     if (!this.chartContainer) return;
-    // Upper jaw: Q1 (right) then Q2 (left)
-    this.buildJaw(this.chartContainer, [...UPPER_RIGHT, ...UPPER_LEFT], "upper");
-    // Lower jaw: mirrored (48→41, 31→38)
-    this.buildJaw(this.chartContainer, [...LOWER_JAW_MIRRORED], "lower");
+    this.builtFor = d;
+    this.chartContainer.innerHTML = "";
+    const jaws = chartJaws(d);
+    if (!jaws.length) {
+      this.chartContainer.innerHTML = `<p class="form-hint">Dojenček brez zob — ni zob za oceno (zobovje nastavite na zavihku Preiskovanec).</p>`;
+      return;
+    }
+    // Upper rows Q1 then Q2; lower rows mirrored (48→41, 31→38); primary rows
+    // keep the 16 columns, under their permanent successors
+    for (const j of jaws) this.buildJaw(this.chartContainer, j.slots, j.jaw, jaws.length > 2 ? j.label : "");
   }
 
   private buildJaw(
     container: HTMLElement,
-    allTeeth: FdiToothNumber[],
-    jaw: "upper" | "lower"
+    allTeeth: ToothSlot[],
+    jaw: "upper" | "lower",
+    caption: string
   ): void {
     const jawDiv = document.createElement("div");
     jawDiv.className = "chart-jaw";
+    if (caption) {
+      const cap = document.createElement("div");
+      cap.className = "chart-jaw-caption";
+      cap.textContent = caption;
+      jawDiv.appendChild(cap);
+    }
 
     if (jaw === "upper") {
       jawDiv.appendChild(this.createToothRow(allTeeth));
@@ -149,11 +169,15 @@ export class ICDASTabController implements TabController {
     container.appendChild(jawDiv);
   }
 
-  private createToothRow(teeth: FdiToothNumber[]): HTMLElement {
+  private createToothRow(teeth: ToothSlot[]): HTMLElement {
     const row = document.createElement("div");
     row.className = "chart-row";
 
     for (const tooth of teeth) {
+      if (tooth === null) {
+        row.appendChild(emptySlot("icdas-tooth-cell slot-empty"));
+        continue;
+      }
       const cell = document.createElement("div");
       cell.className = "icdas-tooth-cell";
       cell.dataset.tooth = String(tooth);
@@ -166,11 +190,15 @@ export class ICDASTabController implements TabController {
     return row;
   }
 
-  private createNumberRow(teeth: FdiToothNumber[]): HTMLElement {
+  private createNumberRow(teeth: ToothSlot[]): HTMLElement {
     const row = document.createElement("div");
     row.className = "chart-number-row";
 
     for (const tooth of teeth) {
+      if (tooth === null) {
+        row.appendChild(emptySlot("tooth-number"));
+        continue;
+      }
       const num = document.createElement("div");
       num.className = "tooth-number";
       num.textContent = String(tooth);
@@ -422,7 +450,7 @@ export class ICDASTabController implements TabController {
     if (!this.session.hasSession()) return;
 
     const icdas = this.session.getIcdas();
-    for (const t of ALL_TEETH) {
+    for (const t of STORED_TEETH) {
       icdas[t] = {
         status: "normal",
         specialCode: null,
@@ -438,7 +466,7 @@ export class ICDASTabController implements TabController {
 
     // Reset ICDAS root caries
     const icRC = this.session.getICDASRootCaries();
-    for (const t of ALL_TEETH) {
+    for (const t of STORED_TEETH) {
       icRC[t] = {
         distoBuccal: null, buccal: null, mesioBuccal: null,
         distoLingual: null, lingual: null, mesioLingual: null,
@@ -644,7 +672,7 @@ export class ICDASTabController implements TabController {
   private refreshAllTeeth(): void {
     if (!this.chartContainer || !this.session.hasSession()) return;
 
-    const cells = this.chartContainer.querySelectorAll(".icdas-tooth-cell") as NodeListOf<HTMLElement>;
+    const cells = this.chartContainer.querySelectorAll(".icdas-tooth-cell[data-tooth]") as NodeListOf<HTMLElement>;
     cells.forEach((cell) => {
       const toothStr = cell.dataset.tooth;
       if (toothStr) {
@@ -655,11 +683,9 @@ export class ICDASTabController implements TabController {
 
   // ── ICDAS Root Caries (Koreninski karies) UI ──────────────────────
 
-  private buildICDASRootCariesUI(): void {
+  private buildICDASRootCariesUI(d: Dentition): void {
     if (!this.rootCariesContainer) return;
 
-    const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-    const lowerTeeth = [...LOWER_JAW_MIRRORED];
     const buccalSites = PROBING_BUCCAL_SITES;
     const lingualSites = PROBING_LINGUAL_SITES;
     const allSites = [...buccalSites, ...lingualSites];
@@ -689,11 +715,15 @@ export class ICDASTabController implements TabController {
       return html;
     };
 
-    this.rootCariesContainer.innerHTML =
-      buildJawTable(upperTeeth, "Zgornja čeljust") +
-      buildJawTable(lowerTeeth, "Spodnja čeljust");
+    const jaws = chartJaws(d);
+    this.rootCariesContainer.innerHTML = jaws.length
+      ? jaws.map((j) => buildJawTable(j.slots.filter((t): t is FdiToothNumber => t !== null), j.label)).join("")
+      : `<p class="form-hint">Ni zob za oceno.</p>`;
+  }
 
-    // Event delegation
+  /** Root-caries clicks, delegated once: the tables are rebuilt with the dentition. */
+  private wireRootCaries(): void {
+    if (!this.rootCariesContainer) return;
     this.rootCariesContainer.addEventListener("click", (e: Event) => {
       const target = e.target as HTMLElement;
       if (!target.classList.contains("rc-radio-btn")) return;
@@ -754,4 +784,12 @@ export class ICDASTabController implements TabController {
       row.classList.toggle("furc-disabled", !isNormal);
     });
   }
+}
+
+/** A chart column with no tooth (primary rows have no molars 6–8). */
+function emptySlot(className: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = className;
+  el.setAttribute("aria-hidden", "true");
+  return el;
 }

@@ -2,10 +2,6 @@ import { TabController } from "./tab-manager";
 import { SessionState, makeDefaultProbingData, makeDefaultBOPData, makeDefaultFurcationInvolvementData } from "../model/session";
 import { FdiToothNumber, ProbingSite, ProbingData, FurcationScore } from "../model/types";
 import {
-  UPPER_RIGHT,
-  UPPER_LEFT,
-  LOWER_JAW_MIRRORED,
-  ALL_TEETH,
   PROBING_BUCCAL_SITES,
   PROBING_LINGUAL_SITES,
   PROBING_SITE_LABELS,
@@ -22,6 +18,8 @@ import {
 import { buildToothOutlinesSvg, TOOTH_CENTER_PCT, SITE_SPREAD } from "../dental/tooth-outlines";
 import { isImplantTooth } from "../model/tooth-status";
 import { computePerioWound } from "../model/perio-wound";
+import { Dentition, ToothSlot, ChartJaw, chartJaws } from "../model/dentition";
+import { sessionDentition, sessionTeeth } from "../model/session";
 
 function getDepthColor(avg: number): string {
   for (const tier of PROBING_DEPTH_COLORS) {
@@ -35,7 +33,12 @@ export class ProbingTabController implements TabController {
   private session: SessionState;
   private selectedTooth: FdiToothNumber | null = null;
   private detailContainer: HTMLElement | null = null;
+  /** Chart strips by "<row index>-<buccal|lingual>". */
   private chartContainers: Map<string, HTMLElement> = new Map();
+  private chartHost: HTMLElement | null = null;
+  private jaws: ChartJaw[] = [];
+  /** Dentition the chart was built for; rebuilt when it changes. */
+  private builtFor: Dentition | null = null;
   private furcationContainer: HTMLElement | null = null;
   private bopSummaryEl: HTMLElement | null = null;
 
@@ -78,7 +81,8 @@ export class ProbingTabController implements TabController {
     this.furcationContainer = panel.querySelector("#furcation-content") as HTMLElement;
     this.bopSummaryEl = panel.querySelector("#bop-summary") as HTMLElement;
 
-    this.buildChart(chartContainer);
+    this.chartHost = chartContainer;
+    this.buildChart(chartContainer, "permanent");
     this.buildFurcationUI();
 
     // Reset button with two-click confirmation
@@ -105,6 +109,11 @@ export class ProbingTabController implements TabController {
 
   onActivate(): void {
     if (!this.session.hasSession()) return;
+    const d = sessionDentition(this.session.getSession());
+    if (d !== this.builtFor && this.chartHost) {
+      this.closeDetail();
+      this.buildChart(this.chartHost, d);
+    }
     this.refreshAllCharts();
     if (this.selectedTooth !== null) {
       this.showDetail(this.selectedTooth);
@@ -119,19 +128,26 @@ export class ProbingTabController implements TabController {
 
   // ── Chart building ────────────────────────────────────────────
 
-  private buildChart(container: HTMLElement): void {
-    const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-    const lowerTeeth = [...LOWER_JAW_MIRRORED];
-
-    this.buildJaw(container, upperTeeth, "upper", "Zgornja čeljust");
-    this.buildJaw(container, lowerTeeth, "lower", "Spodnja čeljust");
+  private buildChart(container: HTMLElement, d: Dentition): void {
+    this.builtFor = d;
+    this.jaws = chartJaws(d);
+    this.chartContainers.clear();
+    container.innerHTML = "";
+    if (!this.jaws.length) {
+      container.innerHTML = `<p class="form-hint">Dojenček brez zob — ni zob za sondiranje (zobovje nastavite na zavihku Preiskovanec).</p>`;
+    }
+    this.jaws.forEach((j, i) => this.buildJaw(container, j.slots, j.jaw, j.label, i));
+    // Furcations are graded on permanent molars only
+    const furcation = this.panel?.querySelector("#furcation-section") as HTMLElement | null;
+    if (furcation) furcation.hidden = !this.jaws.some((j) => !j.primary);
   }
 
   private buildJaw(
     container: HTMLElement,
-    teeth: FdiToothNumber[],
+    teeth: ToothSlot[],
     jaw: "upper" | "lower",
-    label: string
+    label: string,
+    index: number
   ): void {
     const jawDiv = document.createElement("div");
     jawDiv.className = "probing-jaw";
@@ -156,13 +172,14 @@ export class ProbingTabController implements TabController {
     topChartEl.className = "probing-chart-wrap";
     topChartEl.innerHTML = this.buildOutlineOnlySvg(teeth, jaw);
     jawDiv.appendChild(topChartEl);
-    this.chartContainers.set(`${jaw}-${topSide}`, topChartEl);
+    this.chartContainers.set(`${index}-${topSide}`, topChartEl);
 
     // Tooth numbers row — absolutely positioned at tooth center percentages
     const numRow = document.createElement("div");
     numRow.className = "probing-number-row";
     for (let i = 0; i < teeth.length; i++) {
       const tooth = teeth[i];
+      if (tooth === null) continue;
       const numEl = document.createElement("div");
       numEl.className = "probing-tooth-num";
       numEl.textContent = String(tooth);
@@ -178,7 +195,7 @@ export class ProbingTabController implements TabController {
     bottomChartEl.className = "probing-chart-wrap";
     bottomChartEl.innerHTML = this.buildOutlineOnlySvg(teeth, jaw);
     jawDiv.appendChild(bottomChartEl);
-    this.chartContainers.set(`${jaw}-${bottomSide}`, bottomChartEl);
+    this.chartContainers.set(`${index}-${bottomSide}`, bottomChartEl);
 
     const bottomSideLabel = document.createElement("div");
     bottomSideLabel.className = "probing-side-label";
@@ -191,7 +208,7 @@ export class ProbingTabController implements TabController {
   // ── SVG helpers ──────────────────────────────────────────────
 
   /** SVG with just tooth outlines, no data — shown before a session is loaded */
-  private buildOutlineOnlySvg(teeth: FdiToothNumber[], jaw: "upper" | "lower"): string {
+  private buildOutlineOnlySvg(teeth: ToothSlot[], jaw: "upper" | "lower"): string {
     const chartW = 1000;
     const chartH = 100;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartW} ${chartH}" class="probing-chart" preserveAspectRatio="none">`
@@ -200,7 +217,7 @@ export class ProbingTabController implements TabController {
   }
 
   private buildAreaChartSvg(
-    teeth: FdiToothNumber[],
+    teeth: ToothSlot[],
     sites: ProbingSite[],
     data: ProbingData,
     jaw: "upper" | "lower"
@@ -221,6 +238,7 @@ export class ProbingTabController implements TabController {
 
     for (let ti = 0; ti < teeth.length; ti++) {
       const tooth = teeth[ti];
+      if (tooth === null) continue;
       const td = data[tooth];
       const centerX = chartW * (TOOTH_CENTER_PCT[ti] / 100);
 
@@ -274,18 +292,13 @@ export class ProbingTabController implements TabController {
   private refreshAllCharts(): void {
     if (!this.session.hasSession()) return;
     const data = this.session.getProbing();
-
-    const upperTeeth = [...UPPER_RIGHT, ...UPPER_LEFT];
-    const lowerTeeth = [...LOWER_JAW_MIRRORED];
-
-    this.refreshJawCharts("upper", upperTeeth, data);
-    this.refreshJawCharts("lower", lowerTeeth, data);
+    this.jaws.forEach((j, i) => this.refreshJawCharts(i, j.jaw, j.slots, data));
     this.refreshToothNumStyles();
   }
 
-  private refreshJawCharts(jaw: "upper" | "lower", teeth: FdiToothNumber[], data: ProbingData): void {
-    const buccalEl = this.chartContainers.get(`${jaw}-buccal`);
-    const lingualEl = this.chartContainers.get(`${jaw}-lingual`);
+  private refreshJawCharts(index: number, jaw: "upper" | "lower", teeth: ToothSlot[], data: ProbingData): void {
+    const buccalEl = this.chartContainers.get(`${index}-buccal`);
+    const lingualEl = this.chartContainers.get(`${index}-lingual`);
 
     if (buccalEl) {
       buccalEl.innerHTML = this.buildAreaChartSvg(teeth, PROBING_BUCCAL_SITES, data, jaw);
@@ -481,7 +494,7 @@ export class ProbingTabController implements TabController {
     let totalSites = 0;
     let bleedingSites = 0;
 
-    for (const t of ALL_TEETH) {
+    for (const t of sessionTeeth(s)) {
       if (!s.probing[t].present) continue;
       const bopTooth = s.bop[t];
       if (!bopTooth) continue;

@@ -3,6 +3,7 @@
 // premolars 2-cusped, molars multi-cusped, with correct root counts.
 
 import { FdiToothNumber } from "../model/types";
+import { toothShapeType } from "../model/dentition";
 
 // Tooth center positions as % of chart width.
 // 16 teeth per jaw: 8 left half + 8 right half with midline gap.
@@ -165,7 +166,7 @@ function rootPathD(cx: number, gy: number, dir: number, root: RootDef, neckHW: n
  * @param viewH  Actual SVG viewBox height
  */
 export function buildToothOutlinesSvg(
-  teeth: FdiToothNumber[],
+  teeth: (FdiToothNumber | null)[],
   jaw: "upper" | "lower",
   viewW: number,
   viewH: number
@@ -179,7 +180,9 @@ export function buildToothOutlinesSvg(
 
   for (let i = 0; i < teeth.length; i++) {
     const tooth = teeth[i];
-    const type = tooth % 10;
+    // An empty column (primary rows have no molars 6–8)
+    if (tooth === null) continue;
+    const type = toothShapeType(tooth);
     const def = DEFS[type];
     if (!def) continue;
 

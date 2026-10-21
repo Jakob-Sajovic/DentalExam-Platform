@@ -1,7 +1,9 @@
 import { TabController } from "./tab-manager";
 import { SessionState } from "../model/session";
 import { FdiToothNumber, PBSurface, PBToothData } from "../model/types";
-import { UPPER_RIGHT, UPPER_LEFT, LOWER_JAW_MIRRORED, ALL_TEETH, PB_SURFACE_TOOLTIPS } from "../model/constants";
+import { PB_SURFACE_TOOLTIPS } from "../model/constants";
+import { Dentition, ToothSlot, STORED_TEETH, chartJaws } from "../model/dentition";
+import { sessionDentition, sessionTeeth } from "../model/session";
 import { createPBToothSvg, getSurfaceForPosition, VisualPosition } from "../dental/chart-renderer";
 import { isImplantTooth } from "../model/tooth-status";
 
@@ -17,6 +19,8 @@ export class PlaqueBleedingTabController implements TabController {
   private bleedingScoreEl: HTMLElement | null = null;
   private plaqueContainer: HTMLElement | null = null;
   private bleedingContainer: HTMLElement | null = null;
+  /** Dentition the charts were built for; rebuilt when it changes. */
+  private builtFor: Dentition | null = null;
 
   constructor(session: SessionState) {
     this.session = session;
@@ -75,8 +79,7 @@ export class PlaqueBleedingTabController implements TabController {
     this.plaqueContainer = panel.querySelector("#plaque-chart") as HTMLElement;
     this.bleedingContainer = panel.querySelector("#bleeding-chart") as HTMLElement;
 
-    this.buildChart(this.plaqueContainer, "plaque");
-    this.buildChart(this.bleedingContainer, "bleeding");
+    this.buildCharts("permanent");
 
     // Event delegation for surface clicks
     this.plaqueContainer.addEventListener("click", (e) => this.handleSurfaceClick(e, "plaque"));
@@ -88,6 +91,8 @@ export class PlaqueBleedingTabController implements TabController {
 
   onActivate(): void {
     if (!this.session.hasSession()) return;
+    const d = sessionDentition(this.session.getSession());
+    if (d !== this.builtFor) this.buildCharts(d);
     this.refreshAllSurfaces();
     this.updateScores();
   }
@@ -96,22 +101,39 @@ export class PlaqueBleedingTabController implements TabController {
     // Data is written immediately on click
   }
 
-  private buildChart(container: HTMLElement, chartType: ChartType): void {
-    // Upper jaw: Q1 (right) then Q2 (left) — 18,17,...,11, 21,22,...,28
-    this.buildJaw(container, [...UPPER_RIGHT, ...UPPER_LEFT], "upper", chartType);
+  private buildCharts(d: Dentition): void {
+    this.builtFor = d;
+    if (this.plaqueContainer) this.buildChart(this.plaqueContainer, "plaque", d);
+    if (this.bleedingContainer) this.buildChart(this.bleedingContainer, "bleeding", d);
+  }
 
-    // Lower jaw: mirrored — 48,47,...,41, 31,32,...,38
-    this.buildJaw(container, LOWER_JAW_MIRRORED, "lower", chartType);
+  private buildChart(container: HTMLElement, chartType: ChartType, d: Dentition): void {
+    container.innerHTML = "";
+    const jaws = chartJaws(d);
+    if (!jaws.length) {
+      container.innerHTML = `<p class="form-hint">Dojenček brez zob — ni zob za oceno (zobovje nastavite na zavihku Preiskovanec).</p>`;
+      return;
+    }
+    // Upper rows: 18…11 | 21…28; lower rows mirrored: 48…41 | 31…38. Primary
+    // rows keep the 16 columns, with their teeth under the permanent successors.
+    for (const j of jaws) this.buildJaw(container, j.slots, j.jaw, chartType, jaws.length > 2 ? j.label : "");
   }
 
   private buildJaw(
     container: HTMLElement,
-    allTeeth: FdiToothNumber[],
+    allTeeth: ToothSlot[],
     jaw: "upper" | "lower",
-    chartType: ChartType
+    chartType: ChartType,
+    caption: string
   ): void {
     const jawDiv = document.createElement("div");
     jawDiv.className = "chart-jaw";
+    if (caption) {
+      const cap = document.createElement("div");
+      cap.className = "chart-jaw-caption";
+      cap.textContent = caption;
+      jawDiv.appendChild(cap);
+    }
 
     if (jaw === "upper") {
       if (chartType === "plaque") jawDiv.appendChild(this.createMissingBtnRow(allTeeth));
@@ -126,11 +148,15 @@ export class PlaqueBleedingTabController implements TabController {
     container.appendChild(jawDiv);
   }
 
-  private createToothRow(teeth: FdiToothNumber[], chartType: ChartType): HTMLElement {
+  private createToothRow(teeth: ToothSlot[], chartType: ChartType): HTMLElement {
     const row = document.createElement("div");
     row.className = "chart-row";
 
     for (const tooth of teeth) {
+      if (tooth === null) {
+        row.appendChild(emptySlot("tooth-cell slot-empty"));
+        continue;
+      }
       const cell = document.createElement("div");
       cell.className = "tooth-cell";
       cell.dataset.tooth = String(tooth);
@@ -156,11 +182,15 @@ export class PlaqueBleedingTabController implements TabController {
     return row;
   }
 
-  private createNumberRow(teeth: FdiToothNumber[]): HTMLElement {
+  private createNumberRow(teeth: ToothSlot[]): HTMLElement {
     const row = document.createElement("div");
     row.className = "chart-number-row";
 
     for (const tooth of teeth) {
+      if (tooth === null) {
+        row.appendChild(emptySlot("tooth-number"));
+        continue;
+      }
       const num = document.createElement("div");
       num.className = "tooth-number";
       num.textContent = String(tooth);
@@ -201,11 +231,15 @@ export class PlaqueBleedingTabController implements TabController {
     this.updateScores();
   }
 
-  private createMissingBtnRow(teeth: FdiToothNumber[]): HTMLElement {
+  private createMissingBtnRow(teeth: ToothSlot[]): HTMLElement {
     const row = document.createElement("div");
     row.className = "chart-number-row pb-missing-row";
 
     for (const tooth of teeth) {
+      if (tooth === null) {
+        row.appendChild(emptySlot("pb-missing-btn slot-empty"));
+        continue;
+      }
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "pb-missing-btn";
@@ -259,7 +293,7 @@ export class PlaqueBleedingTabController implements TabController {
     const icdas = this.session.getIcdas();
 
     // Update tooth cells (missing / implant state)
-    const cells = container.querySelectorAll(".tooth-cell") as NodeListOf<HTMLElement>;
+    const cells = container.querySelectorAll(".tooth-cell[data-tooth]") as NodeListOf<HTMLElement>;
     cells.forEach((cell) => {
       const tooth = parseInt(cell.dataset.tooth || "0", 10) as FdiToothNumber;
       const toothData = data[tooth];
@@ -280,7 +314,7 @@ export class PlaqueBleedingTabController implements TabController {
 
     // Update missing buttons (plaque chart only)
     if (chartType === "plaque") {
-      const btns = container.querySelectorAll(".pb-missing-btn") as NodeListOf<HTMLElement>;
+      const btns = container.querySelectorAll(".pb-missing-btn[data-tooth]") as NodeListOf<HTMLElement>;
       btns.forEach((btn) => {
         const tooth = parseInt(btn.dataset.tooth || "0", 10) as FdiToothNumber;
         btn.classList.toggle("active", !data[tooth].present);
@@ -300,7 +334,7 @@ export class PlaqueBleedingTabController implements TabController {
 
     const plaque = this.session.getPlaque();
     const bleeding = this.session.getBleeding();
-    for (const t of ALL_TEETH) {
+    for (const t of STORED_TEETH) {
       plaque[t] = { present: true, mesial: false, distal: false, buccal: false, lingual: false };
       bleeding[t] = { present: true, mesial: false, distal: false, buccal: false, lingual: false };
     }
@@ -320,8 +354,8 @@ export class PlaqueBleedingTabController implements TabController {
 
     const surfaces: PBSurface[] = ["mesial", "distal", "buccal", "lingual"];
 
-    for (const tooth of Object.keys(data)) {
-      const t = parseInt(tooth, 10) as FdiToothNumber;
+    // Only the teeth charted for this dentition count
+    for (const t of sessionTeeth(this.session.getSession())) {
       const toothData = data[t];
       if (!toothData.present) continue;
 
@@ -337,4 +371,12 @@ export class PlaqueBleedingTabController implements TabController {
 
     scoreEl.textContent = `${pct}% (${activeSurfaces} od ${totalSurfaces} površin)`;
   }
+}
+
+/** A chart column with no tooth (primary rows have no molars 6–8). */
+function emptySlot(className: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = className;
+  el.setAttribute("aria-hidden", "true");
+  return el;
 }

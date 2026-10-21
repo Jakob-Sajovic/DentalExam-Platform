@@ -1,4 +1,5 @@
 import { FdiToothNumber, PBSurface, ICDASSurface } from "../model/types";
+import { quadrantOf } from "../model/dentition";
 
 // Visual positions in the X-divided tooth SVG
 export type VisualPosition = "top" | "bottom" | "left" | "right";
@@ -87,7 +88,7 @@ export function createPBToothSvg(tooth: FdiToothNumber, size: number): SVGSVGEle
  *     Q2/Q3 (right half): left = mesial, right = distal
  */
 export function getSurfaceForPosition(tooth: FdiToothNumber, position: VisualPosition): PBSurface {
-  const quadrant = Math.floor(tooth / 10);
+  const quadrant = quadrantOf(tooth);
 
   switch (position) {
     case "top":
@@ -187,7 +188,7 @@ export function createICDASToothSvg(tooth: FdiToothNumber, size: number): SVGSVG
 export function getICDASSurfaceForPosition(tooth: FdiToothNumber, position: ICDASVisualPosition): ICDASSurface {
   if (position === "center") return "occlusal";
 
-  const quadrant = Math.floor(tooth / 10);
+  const quadrant = quadrantOf(tooth);
 
   switch (position) {
     case "top":

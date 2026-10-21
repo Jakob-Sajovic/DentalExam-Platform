@@ -6,7 +6,7 @@
  */
 
 import { ExaminationSession, FdiToothNumber, ICDASSurface, RestorationCode } from "./types";
-import { ALL_TEETH } from "./constants";
+import { sessionTeeth } from "./dentition";
 import { isImplantTooth, isToothMissing } from "./tooth-status";
 
 /** Paintable restoration codes, in the order offered: a short label and a chart fill. */
@@ -49,7 +49,7 @@ export function summarizeRestorations(s: ExaminationSession): RestorationSummary
   const perCode = new Map<number, number>();
   const byTooth: RestorationSummary["byTooth"] = [];
   let sealedTeeth = 0;
-  for (const t of ALL_TEETH) {
+  for (const t of sessionTeeth(s)) {
     if (restorationsBlocked(s, t)) continue;
     const surfaces = s.icdas[t].surfaces;
     const items = new Map<number, ICDASSurface[]>();

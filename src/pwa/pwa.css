@@ -419,8 +419,12 @@
 /* 3D: report snapshots */
 .s3-snap-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
 .s3-snap-bar .form-hint { flex: 1 1 240px; }
+.s3-snap-stale { flex: 1 0 100%; margin: 0; }
 .s3-snaps { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 8px; }
 .s3-snaps:empty { display: none; }
 .s3-snap { margin: 0; width: 132px; }
 .s3-snap img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid #e1dfdd; border-radius: 3px; background: #f3f4f6; }
 .s3-snap figcaption { font-size: 11px; color: #605e5c; text-align: center; }
+.s3-list-value { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; }
+.s3-checks { display: flex; gap: 12px; }
+.s3-m-missing { color: #a19f9d; font-weight: 400; font-size: 11px; white-space: normal; }

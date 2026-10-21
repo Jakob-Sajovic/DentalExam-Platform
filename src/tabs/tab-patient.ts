@@ -9,9 +9,11 @@ import {
   StatRegion,
   ageFromBirthDate,
   effectiveAge,
+  todayIso,
   fdiAgeBand,
   formatAge,
 } from "../model/demographics";
+import { DENTITIONS, DENTITION_LABELS, normalizeDentition } from "../model/dentition";
 
 function options(values: readonly string[], labels?: Record<string, string>): string {
   return `<option value="">—</option>` + values.map((v) => `<option value="${v}">${labels ? labels[v] : v}</option>`).join("");
@@ -70,6 +72,10 @@ export class PatientTabController implements TabController {
         <h3 style="font-size: 13px; color: #323130; margin-bottom: 8px;">Demografski podatki</h3>
         <div class="demo-grid">
           <div class="form-group">
+            <label class="form-label" for="demo-dentition">Zobovje</label>
+            <select id="demo-dentition" class="form-input">${DENTITIONS.map((v) => `<option value="${v}">${DENTITION_LABELS[v]}</option>`).join("")}</select>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="demo-sex">Spol</label>
             <select id="demo-sex" class="form-input">${options(Object.keys(SEX_LABELS), SEX_LABELS)}</select>
           </div>
@@ -95,8 +101,9 @@ export class PatientTabController implements TabController {
             <select id="demo-region" class="form-input">${options(STAT_REGIONS)}</select>
           </div>
         </div>
-        <p class="form-hint">Spol in starost izpolnita tudi vprašanji 1 in 2 vprašalnika FDI; spol določa tabelo za
-          izračun parodontalne rane.</p>
+        <p class="form-hint">Zobovje določa zobe na vseh kartah (VPI/GBI, ICDAS, globine, zalivke, 3D): mlečni zobje
+          so pod svojimi stalnimi nasledniki. Spol in starost izpolnita vprašanji 1 in 2 vprašalnika FDI; spol določa
+          tabelo za izračun parodontalne rane.</p>
         <hr style="margin: 16px 0; border: none; border-top: 1px solid #e0e0e0;" />
         <h3 style="font-size: 13px; color: #323130; margin-bottom: 8px;">Izvajalec pregleda</h3>
         <div class="form-group">
@@ -130,10 +137,12 @@ export class PatientTabController implements TabController {
 
     for (const id of ["demo-sex", "demo-birth", "demo-age", "demo-residence", "demo-settlement", "demo-region"]) {
       const el = panel.querySelector(`#${id}`) as HTMLInputElement;
-      el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => this.writeDemographics());
+      el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => this.writeDemographics(id));
     }
-    // The exam date changes the age computed from the birth date
-    this.dateInput.addEventListener("change", () => this.writeDemographics());
+    (panel.querySelector("#demo-dentition") as HTMLSelectElement).addEventListener("change", (e) => {
+      if (!this.session.hasSession()) return;
+      this.session.setDentition(normalizeDentition((e.target as HTMLSelectElement).value));
+    });
   }
 
   private field<T extends HTMLElement>(id: string): T {
@@ -141,36 +150,41 @@ export class PatientTabController implements TabController {
   }
 
   /** Demographics are saved as they are typed, and passed on to the FDI questionnaire. */
-  private writeDemographics(): void {
+  private writeDemographics(changed?: string): void {
     if (!this.session.hasSession()) return;
     const d = this.session.getDemographics();
     d.sex = (this.field<HTMLSelectElement>("demo-sex").value || null) as Sex | null;
     d.birthDate = this.field<HTMLInputElement>("demo-birth").value;
-    const typed = parseFloat(this.field<HTMLInputElement>("demo-age").value.replace(",", "."));
-    d.ageYears = Number.isFinite(typed) ? typed : null;
+    if (changed === "demo-birth") {
+      // A birth date fills in the age, as of today; clearing it keeps the age
+      const fromBirth = ageFromBirthDate(d.birthDate, todayIso());
+      if (fromBirth !== null) d.ageYears = fromBirth;
+    } else if (changed === "demo-age") {
+      // An age alone never fills in a birth date
+      const typed = parseFloat(this.field<HTMLInputElement>("demo-age").value.replace(",", "."));
+      d.ageYears = Number.isFinite(typed) ? typed : null;
+    }
     d.residence = this.field<HTMLInputElement>("demo-residence").value.trim();
     d.settlement = (this.field<HTMLSelectElement>("demo-settlement").value || null) as Settlement | null;
     d.region = (this.field<HTMLSelectElement>("demo-region").value || null) as StatRegion | null;
 
-    const examDate = this.dateInput?.value || this.session.getPatient().date;
-    const age = effectiveAge(d, examDate);
+    const age = effectiveAge(d);
     const fdi = this.session.getFdiQuestionnaire();
     if (d.sex) fdi.gender = d.sex;
     if (age !== null) fdi.age = fdiAgeBand(age);
     this.session.touch();
-    this.showAge();
+    this.showAge(changed !== "demo-age");
   }
 
-  /** With a birth date the age is computed and the hand-entered field is locked. */
-  private showAge(): void {
+  /** With a valid birth date the age comes from it and the age field is locked. */
+  private showAge(fillField = true): void {
     const d = this.session.getDemographics();
-    const examDate = this.dateInput?.value || this.session.getPatient().date;
-    const computed = ageFromBirthDate(d.birthDate, examDate);
+    const fromBirth = ageFromBirthDate(d.birthDate, todayIso()) !== null;
     const ageInput = this.field<HTMLInputElement>("demo-age");
-    ageInput.disabled = computed !== null;
-    if (computed !== null) ageInput.value = String(computed);
+    ageInput.disabled = fromBirth;
+    if (fillField) ageInput.value = d.ageYears === null ? "" : String(d.ageYears);
     this.field<HTMLElement>("demo-age-hint").textContent =
-      computed !== null ? `Izračunano iz datuma rojstva: ${formatAge(computed)}` : d.ageYears !== null ? formatAge(d.ageYears) : "";
+      d.ageYears === null ? "" : `${formatAge(d.ageYears)}${fromBirth ? " — izračunano iz datuma rojstva na današnji dan" : ""}`;
   }
 
   onActivate(): void {
@@ -193,6 +207,7 @@ export class PatientTabController implements TabController {
     this.field<HTMLInputElement>("demo-residence").value = d.residence;
     this.field<HTMLSelectElement>("demo-settlement").value = d.settlement || "";
     this.field<HTMLSelectElement>("demo-region").value = d.region || "";
+    this.field<HTMLSelectElement>("demo-dentition").value = d.dentition;
     this.showAge();
 
     this.validateAndShow();
