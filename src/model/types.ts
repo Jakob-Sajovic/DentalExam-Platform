@@ -60,7 +60,10 @@ export interface PatientData {
   firstName: string;
   lastName: string;
   code: string;
-  checkup: number; // Visit/checkup number 1–10
+  /** Kind of examination (kontrolni, ortodontski specialistični, …); null until chosen. */
+  examType: import("./exam").ExamType | null;
+  /** Sequence number of the examination; optional (null). */
+  checkup: number | null;
 }
 
 // OHIP-49: 49 item scores, 0–4 Likert or null (unanswered)

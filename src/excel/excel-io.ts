@@ -238,7 +238,6 @@ export async function loadSessionFromExcel(): Promise<ExaminationSession | null>
       if (!result.probing) result.probing = makeDefaultProbingData();
       if (!result.rootCaries) result.rootCaries = makeDefaultRootCariesData();
       if (!result.fdiQuestionnaire) result.fdiQuestionnaire = makeDefaultFdiQuestionnaire();
-      if (!result.patient.checkup) result.patient.checkup = 1;
       if (!result.bop) result.bop = makeDefaultBOPData();
       if (!result.furcationInvolvement) result.furcationInvolvement = makeDefaultFurcationInvolvementData();
       if (!result.icdasRootCaries) result.icdasRootCaries = makeDefaultICDASRootCariesData();
@@ -324,7 +323,6 @@ export async function loadSessionFromFile(base64: string): Promise<ExaminationSe
       if (!result.probing) result.probing = makeDefaultProbingData();
       if (!result.rootCaries) result.rootCaries = makeDefaultRootCariesData();
       if (!result.fdiQuestionnaire) result.fdiQuestionnaire = makeDefaultFdiQuestionnaire();
-      if (!result.patient.checkup) result.patient.checkup = 1;
       if (!result.bop) result.bop = makeDefaultBOPData();
       if (!result.furcationInvolvement) result.furcationInvolvement = makeDefaultFurcationInvolvementData();
       if (!result.icdasRootCaries) result.icdasRootCaries = makeDefaultICDASRootCariesData();

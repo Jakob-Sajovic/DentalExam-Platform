@@ -45,4 +45,12 @@ export interface SessionStore {
   loadFromFile(file: File): Promise<ExaminationSession | null>;
 
   readonly local?: LocalSessionApi;
+
+  /** Examination + scan files in one .dentx file — offered by the PWA store only. */
+  readonly bundle?: BundleApi;
+}
+
+export interface BundleApi {
+  /** Save the bundle (download); a password encrypts it. Returns a status message. */
+  save(session: ExaminationSession, password: string | null): Promise<string>;
 }

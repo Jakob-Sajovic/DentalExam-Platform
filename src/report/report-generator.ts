@@ -39,6 +39,7 @@ import {
 } from "../dental/chart-renderer";
 import { buildToothOutlinesSvg, TOOTH_CENTER_PCT, SITE_SPREAD } from "../dental/tooth-outlines";
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
+import { examText, examFileTag } from "../model/exam";
 import { ChartJaw, ToothSlot, chartJaws, sessionDentition, sessionTeeth } from "../model/dentition";
 import {
   buildDemographicsMeta,
@@ -100,7 +101,7 @@ function patientDisplayName(s: ExaminationSession): string {
 export function reportFileTitle(s: ExaminationSession): string {
   const who = (s.patient.code || [s.patient.firstName, s.patient.lastName].filter(Boolean).join("_") || "pregled")
     .replace(/[^\w\-.čšžČŠŽ]+/g, "_");
-  return `Porocilo_${who}_pregled${s.patient.checkup || 1}_${s.patient.date || "brez-datuma"}`;
+  return `Porocilo_${who}_${examFileTag(s.patient)}_${s.patient.date || "brez-datuma"}`;
 }
 
 function buildReportHtml(s: ExaminationSession): string {
@@ -139,7 +140,7 @@ export function buildReportBody(s: ExaminationSession): string {
     <h1>Zobozdravstveni pregled</h1>
     <div class="report-meta">
       <span><strong>Datum:</strong> ${esc(patient.date || "—")}</span>
-      <span><strong>Pregled:</strong> ${patient.checkup || 1}. pregled</span>
+      <span><strong>Pregled:</strong> ${esc(examText(patient))}</span>
       <span><strong>Preiskovanec:</strong> ${esc(patientName)}</span>
       ${patient.code ? `<span><strong>Koda:</strong> ${esc(patient.code)}</span>` : ""}
       ${buildDemographicsMeta(s)}

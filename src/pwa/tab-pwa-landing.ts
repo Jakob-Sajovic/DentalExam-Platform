@@ -1,8 +1,10 @@
 /* global document, HTMLElement, HTMLInputElement, HTMLButtonElement */
 
 import { TabController, TabManager } from "../tabs/tab-manager";
+import { examText } from "../model/exam";
 import { SessionState } from "../model/session";
 import { PwaStore } from "./pwa-store";
+import { BUNDLE_EXTENSION, BundlePasswordError, isEncryptedBundle } from "./bundle";
 import { LocalSessionInfo } from "../storage/session-store";
 import { storageEstimate, requestPersistence } from "./idb";
 import { formatBytes } from "../images/image-utils";
@@ -52,9 +54,18 @@ export class PwaLandingTabController implements TabController {
             <span class="btn-icon">➕</span> Nov pregled
           </button>
           <button id="btn-import-file" class="btn btn-secondary btn-large">
-            <span class="btn-icon">📁</span> Uvozi iz datoteke (.xlsx)
+            <span class="btn-icon">📁</span> Uvozi iz datoteke (.xlsx ali .dentx)
           </button>
-          <input type="file" id="file-import-input" accept=".xlsx,.xls" style="display:none;" />
+          <input type="file" id="file-import-input" accept=".xlsx,.xls,.dentx" style="display:none;" />
+        </div>
+
+        <div class="bundle-unlock" id="bundle-unlock" hidden>
+          <p><strong>Paket je zaščiten z geslom.</strong> <span id="bundle-unlock-name"></span></p>
+          <input type="password" id="bundle-unlock-pw" class="form-input" placeholder="Geslo" autocomplete="current-password" />
+          <div class="bundle-unlock-actions">
+            <button id="bundle-unlock-ok" class="btn btn-primary">Odpri</button>
+            <button id="bundle-unlock-cancel" class="btn btn-secondary">Prekliči</button>
+          </div>
         </div>
 
         <div id="session-status" class="session-status"></div>
@@ -85,6 +96,11 @@ export class PwaLandingTabController implements TabController {
     (panel.querySelector("#btn-import-file") as HTMLButtonElement)
       .addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => void this.handleFileImport(fileInput));
+    panel.querySelector("#bundle-unlock-ok")?.addEventListener("click", () => void this.unlockBundle());
+    panel.querySelector("#bundle-unlock-pw")?.addEventListener("keydown", (e) => {
+      if ((e as KeyboardEvent).key === "Enter") void this.unlockBundle();
+    });
+    panel.querySelector("#bundle-unlock-cancel")?.addEventListener("click", () => this.showUnlock(null));
     (panel.querySelector("#btn-export-all") as HTMLButtonElement)
       .addEventListener("click", () => void this.handleExportAll());
 
@@ -112,6 +128,13 @@ export class PwaLandingTabController implements TabController {
     if (!file) return;
     fileInput.value = "";
 
+    if (file.name.toLowerCase().endsWith(BUNDLE_EXTENSION)) {
+      this.showUnlock(null);
+      if (await isEncryptedBundle(file)) this.showUnlock(file);
+      else await this.openBundle(file, null);
+      return;
+    }
+
     this.setStatus("Uvažanje datoteke ...", false);
     try {
       const data = await this.store.loadFromFile(file);
@@ -125,6 +148,49 @@ export class PwaLandingTabController implements TabController {
       this.tabManager?.switchTo("patient");
     } catch (err) {
       this.setStatus(`Napaka pri uvozu: ${err instanceof Error ? err.message : String(err)}`, false);
+    }
+  }
+
+  /** The bundle waiting for its password, shown in the unlock box; null hides it. */
+  private pendingBundle: File | null = null;
+
+  private showUnlock(file: File | null): void {
+    this.pendingBundle = file;
+    const box = this.panel?.querySelector("#bundle-unlock") as HTMLElement | null;
+    if (!box) return;
+    box.hidden = !file;
+    (box.querySelector("#bundle-unlock-name") as HTMLElement).textContent = file ? file.name : "";
+    const pw = box.querySelector("#bundle-unlock-pw") as HTMLInputElement;
+    pw.value = "";
+    if (file) pw.focus();
+  }
+
+  private async unlockBundle(): Promise<void> {
+    if (!this.pendingBundle) return;
+    const pw = (this.panel?.querySelector("#bundle-unlock-pw") as HTMLInputElement).value;
+    if (!pw) return;
+    await this.openBundle(this.pendingBundle, pw);
+  }
+
+  /** Open a .dentx: the examination becomes the active one, its scans go into this device's storage. */
+  private async openBundle(file: File, password: string | null): Promise<void> {
+    this.setStatus(password ? "Dešifriram in odpiram paket ..." : "Odpiram paket ...", false);
+    try {
+      const { session, restored } = await this.store.loadBundle(file, password);
+      this.showUnlock(null);
+      this.session.loadSession(session);
+      await this.refreshList();
+      this.tabManager?.switchTo("patient");
+      this.setStatus(`Paket odprt: pregled in ${restored} datotek skenov.`, true);
+    } catch (err) {
+      if (err instanceof BundlePasswordError && !err.needed) {
+        // Wrong password: keep the box open for another try
+        this.setStatus(err.message, false);
+        (this.panel?.querySelector("#bundle-unlock-pw") as HTMLInputElement).value = "";
+        return;
+      }
+      this.showUnlock(null);
+      this.setStatus(`Napaka pri odpiranju paketa: ${err instanceof Error ? err.message : String(err)}`, false);
     }
   }
 
@@ -262,7 +328,7 @@ export class PwaLandingTabController implements TabController {
       const s = this.session.getSession();
       const p = s.patient;
       const who = p.code || `${p.firstName} ${p.lastName}`.trim() || s.sessionId;
-      this.statusEl.textContent = `Aktiven pregled: ${who} (${p.checkup || 1}. pregled)`;
+      this.statusEl.textContent = `Aktiven pregled: ${who} (${examText(p)})`;
       this.statusEl.className = "session-status active";
     } else {
       this.statusEl.textContent = "Ni aktivnega pregleda.";

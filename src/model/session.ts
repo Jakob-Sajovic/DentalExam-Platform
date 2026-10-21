@@ -185,7 +185,7 @@ function createBlankSession(): ExaminationSession {
     schemaVersion: SCHEMA_VERSION,
     createdAt: now,
     modifiedAt: now,
-    patient: { date: new Date().toISOString().split("T")[0], firstName: "", lastName: "", code: "", checkup: 1 },
+    patient: { date: new Date().toISOString().split("T")[0], firstName: "", lastName: "", code: "", examType: null, checkup: null },
     examiner: { firstName: "", lastName: "" },
     plaque: createDefaultPBData(),
     bleeding: createDefaultPBData(),

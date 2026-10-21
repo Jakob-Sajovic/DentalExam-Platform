@@ -428,3 +428,15 @@
 .s3-list-value { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; }
 .s3-checks { display: flex; gap: 12px; }
 .s3-m-missing { color: #a19f9d; font-weight: 400; font-size: 11px; white-space: normal; }
+
+/* Save tab: examination bundle (.dentx) */
+.bundle-box { margin-top: 20px; padding: 12px; border: 1px solid #e1dfdd; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+.bundle-box h3 { margin: 0; font-size: 15px; }
+.bundle-check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; }
+.bundle-check input { width: 20px; height: 20px; }
+.bundle-pw { display: flex; flex-direction: column; gap: 6px; }
+.bundle-pw[hidden] { display: none; }
+.bundle-unlock { margin: 12px 0; padding: 12px; border: 1px solid #00796b; border-radius: 6px; background: #f3faf9; display: flex; flex-direction: column; gap: 8px; }
+.bundle-unlock[hidden] { display: none; }
+.bundle-unlock p { margin: 0; }
+.bundle-unlock-actions { display: flex; gap: 8px; }

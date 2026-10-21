@@ -1,8 +1,12 @@
 import { ExaminationSession } from "../model/types";
+import { examText } from "../model/exam";
 import { SessionStore, ActionLabel, LocalSessionApi, LocalSessionInfo } from "../storage/session-store";
 import { STORE_SESSIONS, idbPut, idbGet, idbGetAll, idbDelete } from "./idb";
 import { PwaScanFiles } from "./pwa-scan-files";
 import { buildWorkbook, readWorkbook, workbookFileName, downloadWorkbook } from "./workbook";
+import { BUNDLE_EXTENSION, buildBundle, readBundle } from "./bundle";
+
+declare const __PWA_BUILD_ID__: string;
 
 /** What actually sits in IndexedDB: the session plus local bookkeeping. */
 interface StoredSession {
@@ -19,7 +23,7 @@ function describe(s: ExaminationSession): { title: string; subtitle: string } {
   const p = s.patient;
   const name = p.firstName || p.lastName ? `${p.firstName} ${p.lastName}`.trim() : "";
   const title = p.code || name || "Neimenovan pregled";
-  const parts = [`${p.checkup || 1}. pregled`];
+  const parts = [examText(p)];
   if (p.date) parts.push(p.date);
   if (p.code && name) parts.push(name);
   return { title, subtitle: parts.join(" · ") };
@@ -107,12 +111,38 @@ export class PwaStore implements SessionStore {
 
   readonly scanFiles = new PwaScanFiles();
   readonly local = new PwaLocalSessions(this.scanFiles);
+  readonly bundle = { save: (s: ExaminationSession, password: string | null) => this.saveBundle(s, password) };
 
   async save(session: ExaminationSession): Promise<string> {
     await this.local.autosave(session);
     downloadWorkbook(buildWorkbook([session]), workbookFileName(session));
     await this.local.markExported(session.sessionId);
     return "Pregled shranjen v napravo in izvožen v .xlsx.";
+  }
+
+  /**
+   * Save the examination with its scan files as one .dentx bundle, optionally
+   * encrypted with a password.
+   */
+  async saveBundle(session: ExaminationSession, password: string | null): Promise<string> {
+    await this.local.autosave(session);
+    const { bytes, missing, fileCount } = await buildBundle(session, this.scanFiles, __PWA_BUILD_ID__, password);
+    const name = workbookFileName(session).replace(/\.xlsx$/, BUNDLE_EXTENSION);
+    downloadWorkbook(bytes, name, "application/octet-stream");
+    await this.local.markExported(session.sessionId);
+    const size = `${(bytes.length / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+    const parts = [`Paket ${name} (${size}) s ${fileCount} datotekami skenov${password ? ", zaščiten z geslom" : ""}.`];
+    if (missing.length) {
+      parts.push(`Niso vključene, ker jih ni v tej napravi: ${missing.map((f) => f.name).join(", ")}.`);
+    }
+    return parts.join(" ");
+  }
+
+  /** Open a .dentx bundle: the examination, and its scan files into this device's storage. */
+  async loadBundle(file: File, password: string | null): Promise<{ session: ExaminationSession; restored: number }> {
+    const result = await readBundle(file, this.scanFiles, password);
+    await this.local.autosave(result.session);
+    return result;
   }
 
   async loadFromHost(): Promise<ExaminationSession | null> {

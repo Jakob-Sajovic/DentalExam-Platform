@@ -4,6 +4,7 @@ import { FdiToothNumber, PBSurface, PBToothData, ICDASData, ExaminationSession }
 import { isImplantTooth, isToothMissing } from "../model/tooth-status";
 import { PROBING_ALL_SITES } from "../model/constants";
 import { sessionTeeth } from "../model/dentition";
+import { examText } from "../model/exam";
 import { SessionStore } from "../storage/session-store";
 import { ExcelStore } from "../storage/excel-store";
 import { generateReport } from "../report/report-generator";
@@ -16,6 +17,7 @@ export class SaveReportTabController implements TabController {
   private summaryContainer: HTMLElement | null = null;
   private saveBtn: HTMLButtonElement | null = null;
   private reportBtn: HTMLButtonElement | null = null;
+  private bundleBtn: HTMLButtonElement | null = null;
   private statusMsg: HTMLElement | null = null;
   private store: SessionStore;
 
@@ -41,6 +43,21 @@ export class SaveReportTabController implements TabController {
             Ustvari PDF
           </button>
         </div>
+        ${this.store.bundle ? `
+        <div class="bundle-box">
+          <h3>Paket s 3D skeni (.dentx)</h3>
+          <p class="form-hint">Ena datoteka s podatki pregleda (.xlsx), rentgenskimi slikami, slikami za poročilo in vsemi
+            datotekami 3D skenov — za prenos na drugo napravo in za arhiv. Odprete jo z gumbom »Uvozi« na začetnem zavihku.</p>
+          <label class="bundle-check"><input type="checkbox" id="bundle-protect" /> Zaščiti z geslom (šifrirano AES-256)</label>
+          <div class="bundle-pw" id="bundle-pw" hidden>
+            <input type="password" id="bundle-pw1" class="form-input" placeholder="Geslo (vsaj 8 znakov)" autocomplete="new-password" />
+            <input type="password" id="bundle-pw2" class="form-input" placeholder="Ponovite geslo" autocomplete="new-password" />
+            <p class="form-hint">Brez gesla paketa ni mogoče odpreti — gesla ni mogoče obnoviti.</p>
+          </div>
+          <button id="btn-save-bundle" class="btn btn-secondary btn-large">
+            <span class="btn-icon">📦</span> Shrani paket (.dentx)
+          </button>
+        </div>` : ""}
         <p class="tab-help-footer">${this.store.saveHelp}</p>
       </div>
     `;
@@ -51,6 +68,11 @@ export class SaveReportTabController implements TabController {
     this.statusMsg = panel.querySelector("#save-status") as HTMLElement;
 
     this.saveBtn.addEventListener("click", () => this.handleSave());
+    this.bundleBtn = panel.querySelector("#btn-save-bundle") as HTMLButtonElement | null;
+    this.bundleBtn?.addEventListener("click", () => void this.handleBundle());
+    panel.querySelector("#bundle-protect")?.addEventListener("change", (e) => {
+      (panel.querySelector("#bundle-pw") as HTMLElement).hidden = !(e.target as HTMLInputElement).checked;
+    });
     this.reportBtn.addEventListener("click", () => this.handleReport());
   }
 
@@ -75,6 +97,7 @@ export class SaveReportTabController implements TabController {
   private setButtonsEnabled(enabled: boolean): void {
     if (this.saveBtn) this.saveBtn.disabled = !enabled;
     if (this.reportBtn) this.reportBtn.disabled = !enabled;
+    if (this.bundleBtn) this.bundleBtn.disabled = !enabled;
   }
 
   private async handleSave(): Promise<void> {
@@ -97,6 +120,36 @@ export class SaveReportTabController implements TabController {
         this.statusMsg.textContent = `Napaka: ${err instanceof Error ? err.message : String(err)}`;
         this.statusMsg.style.color = "#a4262c";
       }
+    } finally {
+      this.setButtonsEnabled(true);
+    }
+  }
+
+  private showStatus(text: string, kind: "busy" | "ok" | "error"): void {
+    if (!this.statusMsg) return;
+    this.statusMsg.textContent = text;
+    this.statusMsg.style.color = kind === "ok" ? "#0b6a0b" : kind === "error" ? "#a4262c" : "#605e5c";
+  }
+
+  private async handleBundle(): Promise<void> {
+    if (!this.session.hasSession() || !this.store.bundle || !this.panel) return;
+    const protect = (this.panel.querySelector("#bundle-protect") as HTMLInputElement).checked;
+    let password: string | null = null;
+    if (protect) {
+      const pw1 = (this.panel.querySelector("#bundle-pw1") as HTMLInputElement).value;
+      const pw2 = (this.panel.querySelector("#bundle-pw2") as HTMLInputElement).value;
+      if (pw1.length < 8) return this.showStatus("Geslo mora imeti vsaj 8 znakov.", "error");
+      if (pw1 !== pw2) return this.showStatus("Gesli se ne ujemata.", "error");
+      password = pw1;
+    }
+    this.setButtonsEnabled(false);
+    this.showStatus(protect ? "Pripravljam in šifriram paket ..." : "Pripravljam paket ...", "busy");
+    try {
+      this.showStatus(await this.store.bundle.save(this.session.getSession(), password), "ok");
+      // Do not leave the password lying in the form
+      for (const id of ["#bundle-pw1", "#bundle-pw2"]) (this.panel.querySelector(id) as HTMLInputElement).value = "";
+    } catch (err) {
+      this.showStatus(`Napaka: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       this.setButtonsEnabled(true);
     }
@@ -170,7 +223,7 @@ export class SaveReportTabController implements TabController {
         <div class="summary-card-title">Preiskovanec</div>
         <div class="summary-card-content">
           <span class="label">Datum:</span> ${patient.date || "—"}<br>
-          <span class="label">Pregled:</span> ${patient.checkup || 1}. pregled<br>
+          <span class="label">Pregled:</span> ${this.escapeHtml(examText(patient))}<br>
           <span class="label">Preiskovanec:</span> ${this.escapeHtml(patientName)}<br>
           ${patient.code ? `<span class="label">Koda:</span> ${this.escapeHtml(patient.code)}<br>` : ""}
           <span class="label">Izvajalec:</span> ${this.escapeHtml(examinerName)}

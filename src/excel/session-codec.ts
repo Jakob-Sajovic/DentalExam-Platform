@@ -24,6 +24,7 @@ import {
 import { ALL_TEETH, SCHEMA_VERSION, PROBING_ALL_SITES, ROOT_CARIES_ALL_TEETH, rootCariesEntryCount, LEGACY_RADIOGRAPH_SLOTS } from "../model/constants";
 import { isToothMissing } from "../model/tooth-status";
 import { computePerioWound } from "../model/perio-wound";
+import { normalizeExamType } from "../model/exam";
 import { STORED_TEETH, sessionTeeth, sessionDentition, normalizeDentition } from "../model/dentition";
 import { normalizeDemographics, effectiveAge, Sex, Settlement, StatRegion } from "../model/demographics";
 import {
@@ -88,7 +89,7 @@ export function getColumnHeaders(): string[] {
   h.push("session_id", "schema_version", "created_at", "modified_at");
 
   // Patient
-  h.push("patient_date", "patient_firstName", "patient_lastName", "patient_code", "patient_checkup");
+  h.push("patient_date", "patient_firstName", "patient_lastName", "patient_code", "patient_checkup", "patient_examType");
   // Demographics; demo_age_years is the age used (from the birth date when given)
   h.push("demo_sex", "demo_birth_date", "demo_age_years", "demo_residence", "demo_settlement", "demo_region", "demo_dentition");
 
@@ -191,7 +192,7 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
   row.push(s.sessionId, s.schemaVersion, s.createdAt, s.modifiedAt);
 
   // Patient
-  row.push(s.patient.date, s.patient.firstName, s.patient.lastName, s.patient.code, s.patient.checkup || 1);
+  row.push(s.patient.date, s.patient.firstName, s.patient.lastName, s.patient.code, s.patient.checkup ?? null, s.patient.examType || "");
 
   // Demographics
   const demo = normalizeDemographics(s.demographics);
@@ -662,7 +663,8 @@ export function rowToSession(
       firstName: str("patient_firstName"),
       lastName: str("patient_lastName"),
       code: str("patient_code"),
-      checkup: num("patient_checkup") ?? 1,
+      checkup: num("patient_checkup"),
+      examType: normalizeExamType(str("patient_examType")),
     },
     examiner: {
       firstName: str("examiner_firstName"),

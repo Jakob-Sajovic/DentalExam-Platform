@@ -25,6 +25,7 @@ import {
   makeDefaultRadiographs,
   makeDefaultOhipExtra,
 } from "../model/session";
+import { examFileTag } from "../model/exam";
 
 /**
  * Reads and writes the exact sheet layout the Office add-in produces, so a
@@ -76,7 +77,6 @@ export async function readWorkbook(file: File): Promise<ExaminationSession | nul
   if (!session.probing) session.probing = makeDefaultProbingData();
   if (!session.rootCaries) session.rootCaries = makeDefaultRootCariesData();
   if (!session.fdiQuestionnaire) session.fdiQuestionnaire = makeDefaultFdiQuestionnaire();
-  if (!session.patient.checkup) session.patient.checkup = 1;
   if (!session.bop) session.bop = makeDefaultBOPData();
   if (!session.furcationInvolvement) session.furcationInvolvement = makeDefaultFurcationInvolvementData();
   if (!session.icdasRootCaries) session.icdasRootCaries = makeDefaultICDASRootCariesData();
@@ -106,11 +106,11 @@ export async function readWorkbook(file: File): Promise<ExaminationSession | nul
   return session;
 }
 
-/** Build the file name used for downloads: code, checkup number and date. */
+/** Build the file name used for downloads: code, exam type and number, date. */
 export function workbookFileName(session: ExaminationSession): string {
   const p = session.patient;
   const who = (p.code || `${p.lastName}_${p.firstName}` || "pregled").replace(/[^\w\-.]+/g, "_");
-  return `${who}_pregled${p.checkup || 1}_${p.date || "bez-datuma"}.xlsx`;
+  return `${who}_${examFileTag(p)}_${p.date || "bez-datuma"}.xlsx`;
 }
 
 /**
@@ -118,10 +118,12 @@ export function workbookFileName(session: ExaminationSession): string {
  * platform still differs: iOS routes it through the share sheet rather than a
  * downloads folder, so the anchor must be in the document when clicked.
  */
-export function downloadWorkbook(bytes: Uint8Array, fileName: string): void {
-  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+export function downloadWorkbook(
+  bytes: Uint8Array,
+  fileName: string,
+  type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+): void {
+  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
