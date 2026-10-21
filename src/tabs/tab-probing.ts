@@ -21,6 +21,7 @@ import {
 } from "../model/constants";
 import { buildToothOutlinesSvg, TOOTH_CENTER_PCT, SITE_SPREAD } from "../dental/tooth-outlines";
 import { isImplantTooth } from "../model/tooth-status";
+import { computePerioWound } from "../model/perio-wound";
 
 function getDepthColor(avg: number): string {
   for (const tier of PROBING_DEPTH_COLORS) {
@@ -57,6 +58,7 @@ export class ProbingTabController implements TabController {
         <div id="probing-chart"></div>
         <div id="probing-detail"></div>
         <div id="bop-summary" class="bop-summary-bar" style="margin-top:12px;"></div>
+        <div id="perio-wound" class="perio-wound-bar"></div>
         <div id="furcation-section">
           <h2 style="margin-top:24px;">Prizadetost razcepišč</h2>
           <p class="icdas-help-text">
@@ -408,6 +410,7 @@ export class ProbingTabController implements TabController {
         }
         this.session.touch();
         this.refreshAllCharts();
+        this.refreshBOPSummary();
       });
 
       input.addEventListener("blur", () => {
@@ -492,6 +495,29 @@ export class ProbingTabController implements TabController {
     this.bopSummaryEl.innerHTML = `
       <strong>Krvavitev ob sondiranju (BOP):</strong> ${pct}% (${bleedingSites} od ${totalSites} mest)
     `;
+    this.refreshWound();
+  }
+
+  /** Periodontal wound (Skalerič 2012), shown under the BOP summary. */
+  private refreshWound(): void {
+    const el = this.panel?.querySelector("#perio-wound") as HTMLElement | null;
+    if (!el || !this.session.hasSession()) return;
+    const w = computePerioWound(this.session.getSession());
+    if (!w) {
+      el.innerHTML = "";
+      return;
+    }
+    const cm2 = (mm2: number) => (mm2 / 100).toFixed(2).replace(".", ",");
+    const basis =
+      w.basis === "mean"
+        ? `Spol ni izpolnjen (zavihek FDI) — uporabljeno povprečje obeh spolov.`
+        : `Obseg zobnega vratu za ${w.basis === "male" ? "moške" : "ženske"}.`;
+    const partial = w.sitesMeasured < w.sitesPossible ? ` Izmerjenih ${w.sitesMeasured} od ${w.sitesPossible} mest.` : "";
+    el.innerHTML = `
+      <strong>Parodontalna rana:</strong> ${cm2(w.total)} cm²
+      · vnetna obremenitev ${cm2(w.burden)} cm²
+      · krvaveča (aktivna) rana ${cm2(w.bleeding)} cm²
+      <div class="perio-wound-note">${basis}${partial} Metoda: Skalerič in sod., Acta Odontol Scand 2012.</div>`;
   }
 
   // ── Furcation involvement UI ──────────────────────────────────────

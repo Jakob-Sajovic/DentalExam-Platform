@@ -1696,3 +1696,16 @@ tr.furc-disabled {
   .fc-row { gap: 1px; }
   .fc-number { font-size: 7.5px; }
 }
+
+.perio-wound-bar {
+  margin-top: 8px;
+  background: #f3f9fd;
+  border: 1px solid #c7e0f4;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  text-align: center;
+  color: #323130;
+}
+.perio-wound-bar:empty { display: none; }
+.perio-wound-note { margin-top: 3px; font-size: 11px; color: #605e5c; }

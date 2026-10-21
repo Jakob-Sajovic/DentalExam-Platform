@@ -23,6 +23,7 @@ import {
 } from "../model/types";
 import { ALL_TEETH, SCHEMA_VERSION, PROBING_ALL_SITES, ROOT_CARIES_ALL_TEETH, rootCariesEntryCount, LEGACY_RADIOGRAPH_SLOTS } from "../model/constants";
 import { isToothMissing } from "../model/tooth-status";
+import { computePerioWound } from "../model/perio-wound";
 import {
   RADIOGRAPH_JAWS,
   normalizeRadiographs,
@@ -89,6 +90,8 @@ export function getColumnHeaders(): string[] {
 
   // Computed scores
   h.push("vpi_score_pct", "gbi_score_pct", "bop_score_pct", "ohip_total", "present_teeth_count");
+  // Periodontal wound (Skalerič 2012), mm² — computed, never read back
+  h.push("perio_wound_mm2", "perio_burden_mm2", "perio_bleeding_wound_mm2", "perio_wound_sex_basis");
 
   // Plaque per tooth
   for (const t of ALL_TEETH) {
@@ -189,6 +192,8 @@ export function sessionToRow(s: ExaminationSession): (string | number | boolean 
 
   // Computed scores
   row.push(calcPBPct(s.plaque), calcPBPct(s.bleeding), calcBOPPct(s), calcOhipTotal(s.ohip), calcPresentTeeth(s));
+  const wound = computePerioWound(s);
+  row.push(wound ? wound.total : null, wound ? wound.burden : null, wound ? wound.bleeding : null, wound ? wound.basis : "");
 
   // Plaque
   for (const t of ALL_TEETH) {
